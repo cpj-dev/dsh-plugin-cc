@@ -1,7 +1,7 @@
 /**
  * DSH driver layer — the plugin's only file that knows how to invoke
  * DeepSeek Harness. Facts this file encodes (verified against
- * deepseek-ai/deepseek-harness @ 0.1.0-rc.5):
+ * @deepseek-ai/dsh@0.1.0-rc.6 on npm):
  *
  * - One-shot runs: `dsh --profile headless [--patch <overlay>]... -- "<task>"`.
  *   Launcher flags must precede app arguments; the launcher consumes one
@@ -21,12 +21,13 @@
  *   composition layer, so it wins over profile and home patches.
  * - Headless has no session resume; multi-turn goes through the broker
  *   (see dsh-broker.mjs), never through this file.
- * - The CLI is on npm as `@deepseek-ai/dsh`, but this plugin still obtains
- *   dsh from a source checkout (`pnpm install` + `pnpm run build:lib` →
- *   apps/cli/lib/bin.js, which resolves workspace deps through the
- *   checkout's node_modules). The SDK JSON-RPC server is published
- *   separately and is outside the CLI's dependency closure.
- *   The harness itself requires Node ^22.19 || >=24 and pnpm.
+ * - Default install is the npm CLI (`@deepseek-ai/dsh@HARNESS_NPM_VERSION`)
+ *   into the plugin data dir. The SDK JSON-RPC server is published
+ *   separately and is outside the CLI's dependency closure — setup
+ *   `dsh plugin add`s it into the cc profile together with that package's
+ *   published peerDependencies (self-heal does not provide them).
+ *   `--harness` still links a user-built checkout. The harness itself
+ *   requires Node ^22.19 || >=24; profile plugin add still needs pnpm.
  */
 
 import fs from "node:fs";
@@ -58,23 +59,49 @@ const VALID_EFFORTS = new Set(["low", "medium", "high", "max"]);
 export const DEFAULT_MODEL = "deepseek-v4-pro";
 export const DEFAULT_REASONING_EFFORT = "max";
 
-/** Expected package name of the harness CLI inside a source checkout. */
+/** Expected package name of the harness CLI (npm and source checkout). */
 export const HARNESS_CLI_PACKAGE = "@deepseek-ai/dsh";
+/** SDK JSON-RPC server — published separately, outside the CLI dependency closure. */
+export const HARNESS_SDK_JSONRPC_PACKAGE = "@deepseek-ai/dsh-sdk-jsonrpc-server";
+/**
+ * npm versions this plugin release was verified against (see
+ * docs/dsh-compat.md). Dist-tags are unsafe: SDK-server `latest` is not
+ * the same as CLI `latest`. `--harness` checkouts may run whatever they like.
+ */
+export const HARNESS_NPM_VERSION = "0.1.0-rc.6";
 /** Node floor the harness itself requires (higher than this plugin's >=20). */
 export const HARNESS_NODE_FLOOR = "22.19.0";
-/** Upstream repository the one-command setup clones from. */
-export const HARNESS_GIT_URL = "https://github.com/deepseek-ai/deepseek-harness.git";
 /**
- * The harness commit this plugin release was verified against (see
- * docs/dsh-compat.md). Auto-clones check this out — the harness promises
- * breaking changes, so "latest" is not a safe default; a user-supplied
- * --harness checkout may run whatever it likes.
+ * Direct peerDependencies of `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.0-rc.6`,
+ * pinned to the same release (cordis is versioned independently). Setup
+ * installs these into the cc profile; without them the server cannot
+ * resolve `@deepseek-ai/dsh-sdk-protocol` and cc boot fails.
  */
-export const HARNESS_PINNED_COMMIT = "47f943859bef60e4160492346772ded9b24f765a";
+export const HARNESS_SDK_JSONRPC_PEER_SPECS = [
+  `@deepseek-ai/dsh-agent@${HARNESS_NPM_VERSION}`,
+  `@deepseek-ai/dsh-invariants@${HARNESS_NPM_VERSION}`,
+  `@deepseek-ai/dsh-llm@${HARNESS_NPM_VERSION}`,
+  `@deepseek-ai/dsh-llm-deepseek@${HARNESS_NPM_VERSION}`,
+  `@deepseek-ai/dsh-scope@${HARNESS_NPM_VERSION}`,
+  `@deepseek-ai/dsh-sdk-protocol@${HARNESS_NPM_VERSION}`,
+  `@deepseek-ai/dsh-session@${HARNESS_NPM_VERSION}`,
+  `@deepseek-ai/dsh-subagent@${HARNESS_NPM_VERSION}`,
+  "@deepseek-ai/cordis@^4.0.1"
+];
+
+/** Registry spec for the pinned SDK JSON-RPC server. */
+export function pinnedSdkServerSpec() {
+  return `${HARNESS_SDK_JSONRPC_PACKAGE}@${HARNESS_NPM_VERSION}`;
+}
+
+/** `dsh plugin add` arguments that make the cc profile bootable from npm. */
+export function pinnedSdkServerInstallSpecs() {
+  return [pinnedSdkServerSpec(), ...HARNESS_SDK_JSONRPC_PEER_SPECS];
+}
 
 /**
- * Machine-level plugin config (not workspace state): currently the persisted
- * dsh binary location written by `/dsh:setup --harness`. Lives at
+ * Machine-level plugin config (not workspace state): the persisted dsh
+ * binary and install source written by `/dsh:setup`. Lives at
  * `$CLAUDE_PLUGIN_DATA/config.json`, falling back to
  * `~/.config/dsh-plugin-cc/config.json` outside Claude Code.
  */
@@ -96,30 +123,48 @@ export function readPluginConfig(env = process.env) {
   }
 }
 
-/** Merge `patch` into the plugin config on disk and return the result. */
+/** Merge `patch` into the plugin config on disk and return the result. Null values remove keys. */
 export function writePluginConfig(patch, env = process.env) {
   const file = resolvePluginConfigFile(env);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const next = { ...readPluginConfig(env), ...patch };
+  for (const [key, value] of Object.entries(next)) {
+    if (value == null) {
+      delete next[key];
+    }
+  }
   fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return next;
+}
+
+function configInstallSource(config) {
+  if (config.dshInstall === "npm") {
+    return "npm-pin";
+  }
+  if (config.dshInstall === "harness" || config.harnessCheckout) {
+    return "harness";
+  }
+  return "config";
 }
 
 /**
  * Resolve the dsh binary and where it came from:
  * DSH_BINARY env > persisted config (`dshBinary`) > `dsh` on PATH.
- * A configured path that no longer exists is reported but not used.
+ * Persisted sources: `npm-pin` (setup's npm prefix), `harness` (`--harness`
+ * checkout), or generic `config`. A configured path that no longer exists
+ * is reported but not used.
  */
 export function describeDshBinary(env = process.env) {
   const override = env?.[BINARY_ENV];
   if (override && String(override).trim()) {
     return { binary: String(override).trim(), source: "env", staleConfig: null };
   }
-  const configured = readPluginConfig(env).dshBinary;
+  const config = readPluginConfig(env);
+  const configured = config.dshBinary;
   if (configured && String(configured).trim()) {
     const candidate = String(configured).trim();
     if (fs.existsSync(candidate)) {
-      return { binary: candidate, source: "config", staleConfig: null };
+      return { binary: candidate, source: configInstallSource(config), staleConfig: null };
     }
     return { binary: DEFAULT_BINARY, source: "path", staleConfig: candidate };
   }
@@ -182,9 +227,9 @@ export function nodeVersionSatisfiesHarness(version) {
 }
 
 /**
- * Pick the node that will run a source-built dsh: prefer the node running
- * this bridge (pinned by absolute path), else `node` on PATH (resolved at
- * wrapper runtime). Returns null when neither satisfies the harness floor.
+ * Pick the node that will run dsh: prefer the node running this bridge
+ * (pinned by absolute path), else `node` on PATH (resolved at wrapper
+ * runtime). Returns null when neither satisfies the harness floor.
  */
 export function selectHarnessNode(env = process.env) {
   if (nodeVersionSatisfiesHarness(process.version)) {
@@ -199,69 +244,52 @@ export function selectHarnessNode(env = process.env) {
 }
 
 /**
- * Run one long harness step (`pnpm install` / `pnpm run build:lib`) with
- * live output on OUR stderr — bridge stdout stays reserved for the result.
+ * Where `/dsh:setup` keeps the pinned npm CLI: inside the plugin data dir
+ * (same fallback root as the config file).
  */
-export function runHarnessStep(checkoutRoot, args) {
-  const result = spawnSync("pnpm", args, {
-    cwd: checkoutRoot,
-    stdio: ["ignore", 2, 2],
-    windowsHide: true
-  });
-  return { status: result.status ?? 1, error: result.error ?? null };
+export function resolveNpmInstallDir(env = process.env) {
+  return path.join(path.dirname(resolvePluginConfigFile(env)), "npm");
+}
+
+/** Built CLI entry inside an npm prefix install of `@deepseek-ai/dsh`. */
+export function resolveNpmCliBin(prefix) {
+  return path.join(prefix, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
 }
 
 /**
- * Where the one-command setup keeps its own harness checkout: inside the
- * plugin data dir (same fallback root as the config file). A user-supplied
- * --harness path always wins over this.
+ * Install `@deepseek-ai/dsh@HARNESS_NPM_VERSION` into `prefix`. Live output
+ * on our stderr — bridge stdout stays reserved for the result.
  */
-export function resolveDefaultHarnessDir(env = process.env) {
-  return path.join(path.dirname(resolvePluginConfigFile(env)), "deepseek-harness");
-}
-
-/**
- * Clone the harness into `targetDir` (progress on stderr) and check out the
- * pinned verified commit. The pin is the point of the auto-clone — the
- * harness promises breaking changes, so a clone that cannot land on the
- * verified commit is removed and the setup fails rather than silently
- * installing whatever the default branch holds.
- */
-export function cloneHarnessCheckout(targetDir) {
-  if (!binaryAvailable("git", ["--version"]).available) {
-    throw new Error("Cloning DeepSeek Harness needs git on PATH. Install git, or pass --harness <existing-checkout>.");
-  }
-  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
-  const clone = spawnSync("git", ["clone", HARNESS_GIT_URL, targetDir], {
-    stdio: ["ignore", 2, 2],
-    windowsHide: true
-  });
-  if ((clone.status ?? 1) !== 0) {
-    throw new Error(`git clone ${HARNESS_GIT_URL} failed (exit ${clone.status}); see the output above.`);
-  }
-  let pin = runCommand("git", ["-C", targetDir, "checkout", "--quiet", HARNESS_PINNED_COMMIT]);
-  if (pin.status !== 0) {
-    // The commit can be absent right after a clone served by a stale
-    // mirror; fetch it explicitly and retry once before giving up.
-    runCommand("git", ["-C", targetDir, "fetch", "--quiet", "origin", HARNESS_PINNED_COMMIT]);
-    pin = runCommand("git", ["-C", targetDir, "checkout", "--quiet", HARNESS_PINNED_COMMIT]);
-  }
-  if (pin.status !== 0) {
-    // Leave no clone behind: a rerun must re-clone, not silently build the
-    // default branch that a leftover directory would be mistaken for.
-    fs.rmSync(targetDir, { recursive: true, force: true });
+export function installPinnedDshFromNpm(prefix, { actionsTaken = [] } = {}) {
+  if (!binaryAvailable("npm", ["--version"]).available) {
     throw new Error(
-      `Could not check out the verified harness commit ${HARNESS_PINNED_COMMIT.slice(0, 10)} (${(pin.stderr || pin.stdout).trim().slice(0, 200)}). The clone was removed instead of installing an unverified default-branch build. Retry /dsh:setup, or pass --harness <checkout-path> to use a checkout you manage.`
+      `Installing ${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION} needs npm on PATH. Install Node (npm ships with it), then rerun /dsh:setup.`
     );
   }
-  return targetDir;
+  fs.mkdirSync(prefix, { recursive: true });
+  const spec = `${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}`;
+  process.stderr.write(`Installing ${spec} into ${prefix}...\n`);
+  const result = spawnSync("npm", ["install", "--prefix", prefix, "--no-fund", "--no-audit", spec], {
+    cwd: prefix,
+    stdio: ["ignore", 2, 2],
+    windowsHide: true
+  });
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(`npm install ${spec} failed (exit ${result.status}); see the output above.`);
+  }
+  const binPath = resolveNpmCliBin(prefix);
+  if (!fs.existsSync(binPath)) {
+    throw new Error(`npm install ${spec} succeeded but ${binPath} is missing.`);
+  }
+  actionsTaken.push(`Installed ${spec} into ${prefix}.`);
+  return binPath;
 }
 
 /**
  * Write the persistent wrapper the plugin resolves as its dsh binary: a
- * one-line shim exec'ing the chosen node against the checkout's built CLI.
- * DSH_BINARY-style resolution needs a single executable (no arguments), and
- * bin.js must run under a harness-compatible node regardless of PATH.
+ * one-line shim exec'ing the chosen node against the CLI entry. DSH_BINARY-
+ * style resolution needs a single executable (no arguments), and bin.js
+ * must run under a harness-compatible node regardless of PATH.
  */
 export function writeDshWrapper(binPath, nodeCommand, env = process.env) {
   const wrapperPath = path.join(path.dirname(resolvePluginConfigFile(env)), "bin", "dsh");

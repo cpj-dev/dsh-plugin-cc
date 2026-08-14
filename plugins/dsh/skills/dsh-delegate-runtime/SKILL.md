@@ -18,7 +18,7 @@ stdout is the user-facing result; render it verbatim. A nonzero exit means the r
 | Subcommand | Purpose | Key flags |
 |---|---|---|
 | `check` | readiness probe | `--json` |
-| `setup` | create/verify the multi-turn `cc` profile | `--json` |
+| `setup` | install the pinned npm CLI (or `--harness <built-checkout>`) and create/verify the multi-turn `cc` profile | `--harness <path>`, `--json` |
 | `review` | read-only code review | `--base <ref>`, `--scope`, `--model`, `--effort`, `--background` |
 | `critique` | structured adversarial critique | same as review |
 | `run` | task execution | `--write`, `--session`, `--resume`, `--fresh`, `--model`, `--effort`, `--background`, `--prompt-file` |
@@ -39,7 +39,7 @@ stdout is the user-facing result; render it verbatim. A nonzero exit means the r
 
 ## Failure handling
 
-- "dsh CLI is not installed" → point the user at `/dsh:check`.
+- "dsh CLI is not installed" → point the user at `/dsh:setup` (or `/dsh:check` for the readiness report).
 - "cc profile" errors on `--session`/`--resume`/`import` → point at `/dsh:setup`.
 - "broker is busy" → one run at a time per workspace; wait or `stop --broker`.
 - Structured critique that reports "unstructured output" still contains the raw review text; show it.
