@@ -7,7 +7,7 @@
 
 A Claude Code plugin marketplace that bridges to the **DeepSeek Harness** (`dsh`) agent: code review, adversarial critique, task delegation, background runs, and multi-turn resumable dsh sessions — all from Claude Code slash commands.
 
-Built against a source checkout of DeepSeek Harness `0.1.0-rc.5` (developer preview; the harness has no npm distribution). The exact DSH behaviors this plugin depends on are pinned in [docs/dsh-compat.md](docs/dsh-compat.md); re-verify that table when upgrading dsh.
+Built against a source checkout of DeepSeek Harness `0.1.0-rc.5` (developer preview; the CLI ships as [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) on npm, but the SDK server this plugin needs is outside that package's dependency closure). The exact DSH behaviors this plugin depends on are pinned in [docs/dsh-compat.md](docs/dsh-compat.md); re-verify that table when upgrading dsh.
 
 ## Quick start
 
@@ -19,9 +19,9 @@ Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. The one-command sou
 /plugin install dsh@deepseek-dsh
 
 # 2. One command, one time: /dsh:setup does everything
-#    (DeepSeek Harness is not on npm — setup clones the verified commit,
-#     builds it, links dsh, and creates the multi-turn profile. First run
-#     takes a few minutes.)
+#    (the CLI is on npm as @deepseek-ai/dsh; setup still clones a pinned
+#     source checkout because the cc profile's SDK server is not in the
+#     CLI dependency tree. First run takes a few minutes.)
 /dsh:setup
 
 # 3. In any git repository:

@@ -7,7 +7,7 @@
 
 一个连接 Claude Code 与 **DeepSeek Harness**（`dsh`）的插件市场项目。它提供代码审查、对抗式设计评审、任务委派、后台运行，以及可恢复的多轮 dsh 会话。
 
-本项目基于 DeepSeek Harness `0.1.0-rc.5` 的源码检出版本开发。依赖的具体行为和固定提交记录在 [DSH 兼容性契约](docs/dsh-compat.md) 中；升级 dsh 前必须重新验证。
+本项目基于 DeepSeek Harness `0.1.0-rc.5` 的源码检出版本开发（开发者预览；CLI 已以 [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) 发布到 npm，但本插件需要的 SDK server 不在该包的依赖闭包里）。依赖的具体行为和固定提交记录在 [DSH 兼容性契约](docs/dsh-compat.md) 中；升级 dsh 前必须重新验证。
 
 > 英文文档是技术事实的权威版本。中文文档覆盖安装、命令、排障、贡献和安全流程；命令名、参数、环境变量、路径和 JSON 字段保持英文，以确保兼容性。
 

@@ -21,9 +21,11 @@
  *   composition layer, so it wins over profile and home patches.
  * - Headless has no session resume; multi-turn goes through the broker
  *   (see dsh-broker.mjs), never through this file.
- * - No npm distribution exists: dsh is obtained from a source checkout
- *   (`pnpm install` + `pnpm run build:lib` → apps/cli/lib/bin.js, which
- *   resolves its workspace deps through the checkout's node_modules).
+ * - The CLI is on npm as `@deepseek-ai/dsh`, but this plugin still obtains
+ *   dsh from a source checkout (`pnpm install` + `pnpm run build:lib` →
+ *   apps/cli/lib/bin.js, which resolves workspace deps through the
+ *   checkout's node_modules). The SDK JSON-RPC server is published
+ *   separately and is outside the CLI's dependency closure.
  *   The harness itself requires Node ^22.19 || >=24 and pnpm.
  */
 
@@ -130,9 +132,8 @@ export function resolveDshBinary(env = process.env) {
 }
 
 /**
- * Inspect a DeepSeek Harness source checkout. There is no npm distribution;
- * a checkout that has been `pnpm install`ed and `pnpm run build:lib`t is the
- * only way to obtain a runnable dsh. The built CLI is not self-contained —
+ * Inspect a DeepSeek Harness source checkout. The npm CLI (`@deepseek-ai/dsh`)
+ * is a separate install path; a source-built CLI is not self-contained —
  * it resolves its workspace dependencies through the checkout's
  * node_modules at runtime, so the checkout must stay in place.
  */
