@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![测试](https://github.com/perelmangao/dsh-plugin-cc/actions/workflows/test.yml/badge.svg)](https://github.com/perelmangao/dsh-plugin-cc/actions/workflows/test.yml)
+[![测试](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml/badge.svg)](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml)
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 一个连接 Claude Code 与 **DeepSeek Harness**（`dsh`）的插件市场项目。它提供代码审查、对抗式设计评审、任务委派、后台运行，以及可恢复的多轮 dsh 会话。
@@ -17,7 +17,7 @@
 
 ```bash
 # 1. 安装插件
-/plugin marketplace add perelmangao/dsh-plugin-cc
+/plugin marketplace add cpj-dev/dsh-plugin-cc
 /plugin install dsh@deepseek-dsh
 
 # 2. 首次执行一键安装

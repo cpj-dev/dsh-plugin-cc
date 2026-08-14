@@ -12,7 +12,7 @@
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting at
-https://github.com/perelmangao/dsh-plugin-cc/security/advisories/new. Include
+https://github.com/cpj-dev/dsh-plugin-cc/security/advisories/new. Include
 the affected version, reproduction steps, impact, and any suggested fix. Do
 not disclose exploitable details in a public issue, discussion, or pull request
 before a coordinated fix ships.

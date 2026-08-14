@@ -31,7 +31,7 @@ Ground rules:
 ## Development workflow
 
 ```bash
-git clone https://github.com/perelmangao/dsh-plugin-cc.git
+git clone https://github.com/cpj-dev/dsh-plugin-cc.git
 cd dsh-plugin-cc
 npm test
 ```

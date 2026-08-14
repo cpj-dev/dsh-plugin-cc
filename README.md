@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![test](https://github.com/perelmangao/dsh-plugin-cc/actions/workflows/test.yml/badge.svg)](https://github.com/perelmangao/dsh-plugin-cc/actions/workflows/test.yml)
+[![test](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml/badge.svg)](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A Claude Code plugin marketplace that bridges to the **DeepSeek Harness** (`dsh`) agent: code review, adversarial critique, task delegation, background runs, and multi-turn resumable dsh sessions — all from Claude Code slash commands.
@@ -15,7 +15,7 @@ Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. The one-command sou
 
 ```bash
 # 1. Install the plugin
-/plugin marketplace add perelmangao/dsh-plugin-cc
+/plugin marketplace add cpj-dev/dsh-plugin-cc
 /plugin install dsh@deepseek-dsh
 
 # 2. One command, one time: /dsh:setup does everything

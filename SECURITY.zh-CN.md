@@ -12,7 +12,7 @@
 ## 报告漏洞
 
 请使用 GitHub 私有漏洞报告：
-https://github.com/perelmangao/dsh-plugin-cc/security/advisories/new
+https://github.com/cpj-dev/dsh-plugin-cc/security/advisories/new
 
 报告应包含受影响版本、复现步骤、影响和可选的修复建议。在协调修复发布前，不要在公开 Issue、Discussion 或 Pull Request 中披露可利用细节。
 

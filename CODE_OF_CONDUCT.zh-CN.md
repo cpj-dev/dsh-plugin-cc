@@ -41,7 +41,7 @@
 ## 举报与执行
 
 辱骂、骚扰或其他不可接受行为可通过以下渠道私下报告：
-https://github.com/perelmangao/dsh-plugin-cc/security/advisories/new
+https://github.com/cpj-dev/dsh-plugin-cc/security/advisories/new
 
 报告会得到及时、公平的审阅和调查。所有社区负责人都有义务保护事件报告者的隐私和安全。
 
