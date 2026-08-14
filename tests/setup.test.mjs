@@ -37,6 +37,11 @@ const argv = process.argv.slice(2);
 const dshHome = process.env.DSH_HOME;
 if (argv.includes("--version")) { console.log("0.1.0-rc.6-npmfake"); process.exit(0); }
 if (argv[0] === "plugin") {
+  fs.appendFileSync(path.join(dshHome, "plugin-add.log"), JSON.stringify(argv) + "\\n");
+  if (process.env.DSH_FAIL_PLUGIN_ADD) {
+    process.stderr.write("simulated plugin add failure\\n");
+    process.exit(1);
+  }
   const profile = argv[argv.indexOf("--profile") + 1];
   const dir = path.join(dshHome, "profiles", profile);
   fs.mkdirSync(dir, { recursive: true });
@@ -44,7 +49,6 @@ if (argv[0] === "plugin") {
   if (!fs.existsSync(patchFile)) {
     fs.writeFileSync(patchFile, "# Your patch layer for this dsh profile.\\n[]\\n");
   }
-  fs.appendFileSync(path.join(dshHome, "plugin-add.log"), JSON.stringify(argv) + "\\n");
   process.exit(0);
 }
 if (argv.includes("--dump-config")) {
@@ -57,18 +61,20 @@ if (argv.includes("--dump-config")) {
 process.exit(0);
 `;
 
-function writeFakeCheckout(dir, { installed = true, built = true } = {}) {
+function writeFakeCheckout(dir, { installed = true, built = true, sdkServer = true } = {}) {
   const cliDir = path.join(dir, "apps", "cli");
   fs.mkdirSync(cliDir, { recursive: true });
   fs.writeFileSync(
     path.join(cliDir, "package.json"),
     JSON.stringify({ name: HARNESS_CLI_PACKAGE, version: HARNESS_NPM_VERSION, type: "module" })
   );
-  fs.mkdirSync(path.join(dir, "packages", "sdk", "server"), { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, "packages", "sdk", "server", "package.json"),
-    JSON.stringify({ name: HARNESS_SDK_JSONRPC_PACKAGE })
-  );
+  if (sdkServer) {
+    fs.mkdirSync(path.join(dir, "packages", "sdk", "server"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "packages", "sdk", "server", "package.json"),
+      JSON.stringify({ name: HARNESS_SDK_JSONRPC_PACKAGE })
+    );
+  }
   if (installed) {
     fs.mkdirSync(path.join(dir, "node_modules"), { recursive: true });
   }
@@ -77,6 +83,23 @@ function writeFakeCheckout(dir, { installed = true, built = true } = {}) {
     fs.writeFileSync(path.join(cliDir, "lib", "bin.js"), FAKE_BIN_SOURCE, { mode: 0o755 });
   }
   return dir;
+}
+
+function seedReadyCcProfile(dshHome) {
+  const dir = path.join(dshHome, "profiles", "cc");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "cordis.patch.yml"),
+    `# seeded ready profile\n- name: '${HARNESS_SDK_JSONRPC_PACKAGE}'\n`
+  );
+}
+
+function pluginAddCount(dshHome) {
+  const file = path.join(dshHome, "plugin-add.log");
+  if (!fs.existsSync(file)) {
+    return 0;
+  }
+  return fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean).length;
 }
 
 function writeFakeNpm(binDir, templatePath) {
@@ -181,6 +204,7 @@ test("setup with no args installs the pinned npm CLI and registry SDK specs", (t
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
   assert.equal(config.dshInstall, "npm");
   assert.equal(config.npmVersion, HARNESS_NPM_VERSION);
+  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
   assert.equal(config.npmPrefix, path.join(dataDir, "npm"));
   assert.equal(config.harnessCheckout, undefined);
   assert.ok(fs.existsSync(config.dshBinary));
@@ -236,9 +260,18 @@ test("setup --harness on a built checkout links dsh and installs the SDK server 
   assert.match(patch, /managed by dsh-plugin-cc/);
   assert.doesNotMatch(patch, /^\[\][ \t]*$/m);
 
-  const rerun = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  const rerun = runBridge(["setup", "--harness", checkout, "--json", "--cwd", workspace], env, workspace);
   assert.equal(rerun.status, 0, rerun.stderr);
-  assert.equal(fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n").length, 1);
+  assert.equal(pluginAddCount(dshHome), 1);
+
+  const migrated = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(migrated.status, 0, migrated.stderr);
+  const migratedReport = JSON.parse(migrated.stdout);
+  assert.equal(migratedReport.dsh.source, "npm-pin");
+  const migratedConfig = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(migratedConfig.dshInstall, "npm");
+  assert.equal(migratedConfig.harnessCheckout, undefined);
+  assert.equal(pluginAddCount(dshHome), 2);
 });
 
 test("setup --harness rejects non-checkouts and unbuilt trees without compiling them", (t) => {
@@ -257,6 +290,12 @@ test("setup --harness rejects non-checkouts and unbuilt trees without compiling 
   const unbuilt = runBridge(["setup", "--harness", bare, "--cwd", workspace], env, workspace);
   assert.equal(unbuilt.status, 1);
   assert.match(unbuilt.stderr, /pnpm install && pnpm run build:lib/);
+
+  const noSdk = writeFakeCheckout(makeTempDir("checkout-no-sdk-"), { sdkServer: false });
+  const missingSdk = runBridge(["setup", "--harness", noSdk, "--cwd", workspace], env, workspace);
+  assert.equal(missingSdk.status, 1);
+  assert.match(missingSdk.stderr, /No SDK server package/);
+  assert.equal(pluginAddCount(env.DSH_HOME), 0, "--harness must not silently add registry SDK specs");
 });
 
 test("plain setup with an external dsh adds the SDK server from npm specs", (t) => {
@@ -280,15 +319,16 @@ test("plain setup with an external dsh adds the SDK server from npm specs", (t) 
   assert.equal(report.dsh.source, "env");
   assert.ok(!report.actionsTaken.some((line) => line.includes("Installed @deepseek-ai/dsh@")));
   assert.ok(!fs.existsSync(path.join(dataDir, "npm")), "external dsh must not trigger an npm prefix install");
-  const configPath = path.join(dataDir, "config.json");
-  if (fs.existsSync(configPath)) {
-    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    assert.notEqual(config.dshInstall, "npm");
-  }
-
-  const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
-  const addArgv = JSON.parse(addLog[0]);
-  assert.deepEqual(addArgv, ["plugin", "--profile", "cc", "add", ...pinnedSdkServerInstallSpecs()]);
+  const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.notEqual(config.dshInstall, "npm");
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim()), [
+    "plugin",
+    "--profile",
+    "cc",
+    "add",
+    ...pinnedSdkServerInstallSpecs()
+  ]);
 });
 
 test("check reports the configured npm pin and flags a vanished binary", (t) => {
@@ -340,8 +380,111 @@ test("setup reinstalls the npm pin when the persisted version is stale", (t) => 
   const next = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(next.npmVersion, HARNESS_NPM_VERSION);
   assert.equal(next.dshInstall, "npm");
+  assert.equal(next.sdkProfileVersion, HARNESS_NPM_VERSION);
 
   const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
   assert.equal(addLog.length, 2, "pin refresh must re-add SDK server + peers, not skip because dump-config already names the package");
   assert.deepEqual(JSON.parse(addLog[1]), ["plugin", "--profile", "cc", "add", ...pinnedSdkServerInstallSpecs()]);
+});
+
+test("plain setup migrates a pre-npm source config to the npm pin", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, dshHome, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-legacy-");
+  const checkout = writeFakeCheckout(makeTempDir("legacy-checkout-"));
+  const wrapper = path.join(dataDir, "bin", "dsh");
+  fs.mkdirSync(path.dirname(wrapper), { recursive: true });
+  fs.writeFileSync(
+    wrapper,
+    `#!/bin/sh\nexec "${process.execPath}" "${checkout}/apps/cli/lib/bin.js" "$@"\n`,
+    { mode: 0o755 }
+  );
+  fs.writeFileSync(
+    path.join(dataDir, "config.json"),
+    `${JSON.stringify({ dshBinary: wrapper, harnessCheckout: checkout }, null, 2)}\n`
+  );
+  seedReadyCcProfile(dshHome);
+
+  const result = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.dsh.source, "npm-pin");
+  assert.ok(report.npm.ok, JSON.stringify(report.npm));
+  assert.ok(report.actionsTaken.length > 0);
+  assert.ok(report.actionsTaken.some((line) => line.includes(`Installed ${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}`)));
+
+  const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(config.dshInstall, "npm");
+  assert.equal(config.harnessCheckout, undefined);
+  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.match(fs.readFileSync(config.dshBinary, "utf8"), /@deepseek-ai\/dsh\/lib\/bin\.js/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim()), [
+    "plugin",
+    "--profile",
+    "cc",
+    "add",
+    ...pinnedSdkServerInstallSpecs()
+  ]);
+});
+
+test("setup retries profile plugin add after a failed pin refresh", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, dshHome, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-retry-");
+
+  const setup = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(setup.status, 0, setup.stderr);
+  assert.equal(pluginAddCount(dshHome), 1);
+
+  const configPath = path.join(dataDir, "config.json");
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.npmVersion = "0.0.1-rc.5";
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  const failed = runBridge(["setup", "--cwd", workspace], { ...env, DSH_FAIL_PLUGIN_ADD: "1" }, workspace);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /simulated plugin add failure/);
+  const afterFail = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  assert.equal(afterFail.npmVersion, HARNESS_NPM_VERSION);
+  assert.equal(afterFail.sdkProfileVersion, undefined);
+  assert.equal(pluginAddCount(dshHome), 2);
+
+  const retry = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(retry.status, 0, retry.stderr);
+  const report = JSON.parse(retry.stdout);
+  assert.ok(report.actionsTaken.some((line) => line.includes(HARNESS_SDK_JSONRPC_PACKAGE)));
+  assert.equal(pluginAddCount(dshHome), 3);
+  const afterRetry = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  assert.equal(afterRetry.sdkProfileVersion, HARNESS_NPM_VERSION);
+});
+
+test("external dsh with a ready profile still refreshes pinned SDK specs", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, dshHome, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-ext-stale-profile-");
+  seedReadyCcProfile(dshHome);
+
+  const externalDir = makeTempDir("external-dsh-");
+  fs.writeFileSync(path.join(externalDir, "bin.js"), FAKE_BIN_SOURCE);
+  const externalDsh = path.join(externalDir, "dsh");
+  fs.writeFileSync(externalDsh, `#!/bin/sh\nexec "${process.execPath}" "${externalDir}/bin.js" "$@"\n`, { mode: 0o755 });
+
+  const result = runBridge(["setup", "--json", "--cwd", workspace], { ...env, DSH_BINARY: externalDsh }, workspace);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const report = JSON.parse(result.stdout);
+  assert.ok(report.actionsTaken.some((line) => line.startsWith(`Refreshed ${HARNESS_SDK_JSONRPC_PACKAGE}`)));
+  assert.ok(!fs.existsSync(path.join(dataDir, "npm")));
+  assert.equal(pluginAddCount(dshHome), 1);
+  const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.notEqual(config.dshInstall, "npm");
 });

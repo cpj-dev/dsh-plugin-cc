@@ -7,8 +7,8 @@ Start with `/dsh:check`. It is read-only and reports the exact missing prerequis
 ## Setup cannot find DeepSeek Harness
 
 - **No `dsh`:** run `/dsh:setup`. It installs `@deepseek-ai/dsh@<pin>` from npm into the plugin data directory, writes a wrapper, and creates the `cc` profile.
-- **Existing built checkout:** run `/dsh:setup --harness <absolute-path>`. The directory must already be installed and built (`pnpm install && pnpm run build:lib`); the plugin will not compile it.
-- **Existing `DSH_BINARY`, missing `cc` profile:** run `/dsh:setup`. It adds `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` and that package's published peers into the profile.
+- **Existing built checkout:** run `/dsh:setup --harness <absolute-path>`. The directory must already be installed and built (`pnpm install && pnpm run build:lib`); the plugin will not compile it. A later no-args `/dsh:setup` migrates a persisted source install to the npm pin.
+- **Existing `DSH_BINARY`, missing or stale `cc` profile:** run `/dsh:setup`. It adds `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` and that package's published peers into the profile even if `--dump-config` already names the package (tracked as `sdkProfileVersion`).
 - **Node version error:** plugin commands need Node >= 20; running DeepSeek Harness needs Node >= 22.19.
 - **`npm` missing:** install Node (npm ships with it), then rerun setup.
 - **`pnpm` missing:** enable Corepack with `corepack enable`, or install a compatible `pnpm`, then rerun setup. Profile plugin installation always needs pnpm.

@@ -28,7 +28,7 @@ Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. Installing dsh via 
 /dsh:review         # read-only review of your local changes
 ```
 
-Have your own built [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) checkout? `/dsh:setup --harness <path>` uses it instead of npm (the directory must already be `pnpm install`'d and `pnpm run build:lib`'d). Have a built `dsh` already? `DSH_BINARY` selects that executable; plain `/dsh:setup` still creates the `cc` profile from the pinned npm SDK-server package. Uninstalling: remove the plugin, the plugin data directory (the npm prefix lives there), and `~/.dsh/profiles/cc`.
+Have your own built [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) checkout? `/dsh:setup --harness <path>` uses it instead of npm (the directory must already be `pnpm install`'d and `pnpm run build:lib`'d). A later `/dsh:setup` with no args migrates that machine to the npm pin; pass `--harness` again to keep the checkout. Have a built `dsh` already? `DSH_BINARY` selects that executable; plain `/dsh:setup` still creates the `cc` profile from the pinned npm SDK-server package. Uninstalling: remove the plugin, the plugin data directory (the npm prefix lives there), and `~/.dsh/profiles/cc`.
 
 ## Commands
 

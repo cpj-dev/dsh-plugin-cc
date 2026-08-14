@@ -346,13 +346,15 @@ function linkBuiltHarnessCheckout(checkoutRoot, { actionsTaken, harnessNode }) {
       `The checkout at ${inspection.root} is ${missing}. Run \`pnpm install && pnpm run build:lib\` there yourself, then rerun /dsh:setup --harness.`
     );
   }
+  resolveSdkServerDir(inspection.root);
   const wrapper = writeDshWrapper(inspection.binPath, harnessNode.command);
   writePluginConfig({
     dshBinary: wrapper,
     dshInstall: "harness",
     harnessCheckout: inspection.root,
     npmPrefix: null,
-    npmVersion: null
+    npmVersion: null,
+    sdkProfileVersion: null
   });
   actionsTaken.push(
     `Linked dsh to the source checkout at ${inspection.root} (${inspection.version ?? "unknown version"}${inspection.commit ? ` @ ${inspection.commit}` : ""}; wrapper at ${wrapper}, node ${harnessNode.version}).`
@@ -369,16 +371,9 @@ function resolveSdkServerDir(checkoutRoot) {
   return dir;
 }
 
-/** `--harness` uses the checkout path; otherwise the pinned npm specs + peers. */
-function sdkServerInstallSpecs(checkoutRoot) {
-  if (checkoutRoot) {
-    try {
-      return [resolveSdkServerDir(checkoutRoot)];
-    } catch {
-      // Persisted checkout vanished; fall back to registry specs.
-    }
-  }
-  return pinnedSdkServerInstallSpecs();
+/** True when persisted config is a source checkout, including pre-npm-pin installs. */
+function isLegacySourceInstall(config) {
+  return config.dshInstall !== "npm" && (config.dshInstall === "harness" || Boolean(config.harnessCheckout));
 }
 
 function requireHarnessNode() {
@@ -398,7 +393,10 @@ function persistNpmCli(prefix, binPath, harnessNode, actionsTaken) {
     dshInstall: "npm",
     npmPrefix: prefix,
     npmVersion: HARNESS_NPM_VERSION,
-    harnessCheckout: null
+    harnessCheckout: null,
+    // Cleared until plugin add succeeds — dump-config matching the package
+    // name must not skip a retry after a failed refresh.
+    sdkProfileVersion: null
   });
   actionsTaken.push(
     `Linked dsh to the npm install at ${prefix} (${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}; wrapper at ${wrapper}, node ${harnessNode.version}).`
@@ -414,7 +412,6 @@ async function handleSetup(argv) {
   const actionsTaken = [];
 
   let checkoutRoot = null;
-  let refreshProfilePlugins = false;
   const envBinary = String(process.env.DSH_BINARY ?? "").trim();
   if (options.harness) {
     const inspection = linkBuiltHarnessCheckout(path.resolve(cwd, options.harness), {
@@ -429,20 +426,16 @@ async function handleSetup(argv) {
     checkoutRoot = null;
   } else {
     const config = readPluginConfig();
-    checkoutRoot = config.harnessCheckout ?? null;
     const dshAvailable = getDshAvailability(cwd).available;
     const npmPinStale = config.dshInstall === "npm" && config.npmVersion !== HARNESS_NPM_VERSION;
-    if (!dshAvailable || npmPinStale) {
+    // Pre-npm configs only stored dshBinary + harnessCheckout. A still-
+    // runnable wrapper must not keep the machine on the old source install;
+    // only an explicit --harness this run retains a checkout.
+    if (!dshAvailable || npmPinStale || isLegacySourceInstall(config)) {
       const harnessNode = requireHarnessNode();
       const prefix = resolveNpmInstallDir();
       const binPath = installPinnedDshFromNpm(prefix, { actionsTaken });
       persistNpmCli(prefix, binPath, harnessNode, actionsTaken);
-      checkoutRoot = null;
-      // dump-config only checks that the package *name* is present, so a
-      // pin bump would otherwise leave the SDK server and peers at the
-      // previous versions. Re-add the pinned specs whenever we refresh
-      // the CLI (also covers first npm install over an old profile).
-      refreshProfilePlugins = true;
     }
   }
 
@@ -452,12 +445,17 @@ async function handleSetup(argv) {
   // 1. Ensure the cc profile exists with the jsonrpc server installed.
   //    `dsh plugin --profile cc add <spec>` initializes a missing profile
   //    (dsh-base alone for non-shipped names) and forwards to pnpm.
-  //    `--harness` link:-installs the checkout's SDK server; the default
-  //    path adds the pinned npm package plus its published peerDependencies
-  //    (self-heal does not provide them; without them cc boot fails).
+  //    `--harness` link:-installs the checkout's SDK server (missing
+  //    packages/sdk/server is an error, not a silent registry fallback).
+  //    The default path adds the pinned npm package plus its published
+  //    peerDependencies. sdkProfileVersion is written only after add
+  //    succeeds, so a pin bump or a failed add is retried even when
+  //    dump-config already names the package.
   const probeBefore = probeProfile("cc", { mustContain: JSONRPC_PLUGIN, cwd });
-  if (!probeBefore.ready || refreshProfilePlugins) {
-    const specs = sdkServerInstallSpecs(checkoutRoot);
+  const usingCheckout = Boolean(checkoutRoot);
+  const profilePinStale = !usingCheckout && readPluginConfig().sdkProfileVersion !== HARNESS_NPM_VERSION;
+  if (!probeBefore.ready || profilePinStale) {
+    const specs = usingCheckout ? [resolveSdkServerDir(checkoutRoot)] : pinnedSdkServerInstallSpecs();
     const pnpmStatus = binaryAvailable("pnpm", ["--version"], { cwd });
     if (!pnpmStatus.available) {
       throw new Error("Profile setup needs pnpm on PATH (dsh plugin forwards to pnpm). Install pnpm (`corepack enable`) and rerun /dsh:setup.");
@@ -467,6 +465,7 @@ async function handleSetup(argv) {
     if (install.status !== 0) {
       throw new Error(`dsh plugin --profile cc add ${specs.join(" ")} failed:\n${(install.stderr || install.stdout).trim().slice(0, 800)}`);
     }
+    writePluginConfig({ sdkProfileVersion: usingCheckout ? null : HARNESS_NPM_VERSION });
     actionsTaken.push(
       probeBefore.ready
         ? `Refreshed ${JSONRPC_PLUGIN} in the cc profile from ${specs.join(" ")}.`

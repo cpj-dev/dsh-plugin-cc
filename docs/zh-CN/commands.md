@@ -14,10 +14,10 @@
 
 | 参数 | 含义 |
 |---|---|
-| 无 | 一键安装：把 `@deepseek-ai/dsh@<HARNESS_NPM_VERSION>` 装进插件数据目录的 npm prefix，写成 wrapper，并创建 `cc` profile。已通过 `DSH_BINARY` 或 PATH 找到 `dsh` 时跳过 CLI 安装。版本是精确 pin，不跟随 `latest`/`next` |
-| `--harness <checkout-path>` | 使用**已经构建好**的 DeepSeek Harness 源码目录：校验 `apps/cli/lib/bin.js` 存在（插件不再代跑 `pnpm install` / `build:lib`），生成 Node wrapper，并把 `dshBinary`、`dshInstall: harness`、`harnessCheckout` 写入 `config.json` |
+| 无 | 一键安装：把 `@deepseek-ai/dsh@<HARNESS_NPM_VERSION>` 装进插件数据目录的 npm prefix，写成 wrapper，并创建 `cc` profile。也会把已持久化的源码安装（旧版 `harnessCheckout`，或 `dshInstall: harness`）迁移到该 pin。已通过 `DSH_BINARY` 或 PATH 找到 `dsh` 时跳过 CLI 安装。版本是精确 pin，不跟随 `latest`/`next` |
+| `--harness <checkout-path>` | 使用**已经构建好**的 DeepSeek Harness 源码目录：校验 `apps/cli/lib/bin.js` 和 `packages/sdk/server` 存在（插件不再代跑 `pnpm install` / `build:lib`，缺 SDK server 时也不会静默回退到 npm），生成 Node wrapper，并把 `dshBinary`、`dshInstall: harness`、`harnessCheckout` 写入 `config.json`。只有这次传入该参数才会保留源码路径；之后无参数 setup 会迁移到 npm |
 
-`/dsh:setup` 仍会执行 `dsh plugin --profile cc add`，装入 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` **以及该包已发布的 peerDependencies**——SDK server 不在 CLI 依赖闭包里，launcher 的 profile self-heal 也不会提供这些 peers（只 add server 会在启动时出现 `Cannot find package '@deepseek-ai/dsh-sdk-protocol'`）。`--harness` 则从检出目录 `link:` 安装 `packages/sdk/server`。随后写入受管 patch 块（标记 `# managed by dsh-plugin-cc`），并用 `--dump-config` 验证。运行 Harness 需要 Node >= 22.19；默认 CLI 安装需要 `npm`；`dsh plugin add` 需要 `pnpm`（`corepack enable`）。pin 未变时重复执行是安全的；pin 升级会重装 CLI **并**重新 add SDK server/peers（`--dump-config` 里已有包名不够）。
+`/dsh:setup` 仍会执行 `dsh plugin --profile cc add`，装入 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` **以及该包已发布的 peerDependencies**——SDK server 不在 CLI 依赖闭包里，launcher 的 profile self-heal 也不会提供这些 peers（只 add server 会在启动时出现 `Cannot find package '@deepseek-ai/dsh-sdk-protocol'`）。`--harness` 则从检出目录 `link:` 安装 `packages/sdk/server`。随后写入受管 patch 块（标记 `# managed by dsh-plugin-cc`），并用 `--dump-config` 验证。运行 Harness 需要 Node >= 22.19；默认 CLI 安装需要 `npm`；`dsh plugin add` 需要 `pnpm`（`corepack enable`）。CLI pin 与 `sdkProfileVersion` 未变时重复执行是安全的；pin 升级会重装 CLI **并**重新 add SDK server/peers。`sdkProfileVersion` 只在 `plugin add` 成功后写入，因此刷新失败后重试仍会 add，即使 `--dump-config` 里已有包名。
 
 ## `/dsh:review` → `review`，`/dsh:critique` → `critique`
 

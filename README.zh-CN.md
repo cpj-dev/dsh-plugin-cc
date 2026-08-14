@@ -30,7 +30,7 @@
 /dsh:review
 ```
 
-已有**已构建**的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录时，可运行 `/dsh:setup --harness <path>`（目录必须已经执行过 `pnpm install` 和 `pnpm run build:lib`）。已有可执行的 `dsh` 时，可通过 `DSH_BINARY` 指定；普通 `/dsh:setup` 仍会从固定版本的 npm 包装入 `cc` profile。卸载：删除插件、插件数据目录（npm prefix 在其中）以及 `~/.dsh/profiles/cc`。
+已有**已构建**的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录时，可运行 `/dsh:setup --harness <path>`（目录必须已经执行过 `pnpm install` 和 `pnpm run build:lib`）。之后再跑无参数的 `/dsh:setup` 会迁移到 npm pin；要继续用源码目录需再次传入 `--harness`。已有可执行的 `dsh` 时，可通过 `DSH_BINARY` 指定；普通 `/dsh:setup` 仍会从固定版本的 npm 包装入 `cc` profile。卸载：删除插件、插件数据目录（npm prefix 在其中）以及 `~/.dsh/profiles/cc`。
 
 ## 命令
 
