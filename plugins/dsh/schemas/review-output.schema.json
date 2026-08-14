@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DSH critique output",
+  "type": "object",
+  "required": ["summary", "findings"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One-paragraph overall assessment of the change."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "approve-with-nits", "request-changes"],
+      "description": "Overall recommendation."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "title", "body"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "major", "minor", "info"]
+          },
+          "title": { "type": "string" },
+          "body": {
+            "type": "string",
+            "description": "Grounded explanation with the evidence that supports the finding."
+          },
+          "file": { "type": "string" },
+          "line": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

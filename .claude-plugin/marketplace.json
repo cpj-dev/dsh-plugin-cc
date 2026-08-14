@@ -1,0 +1,27 @@
+{
+  "name": "deepseek-dsh",
+  "owner": {
+    "name": "DeepSeek Harness community",
+    "url": "https://github.com/perelmangao/dsh-plugin-cc"
+  },
+  "metadata": {
+    "description": "DeepSeek Harness ↔ Claude Code bridge for review, critique, and delegation / 用于审查、评审和任务委派的桥接插件。",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "dsh",
+      "description": "DeepSeek Harness ↔ Claude Code bridge for review, critique, and delegation / 用于审查、评审和任务委派的桥接插件。",
+      "version": "1.0.0",
+      "author": {
+        "name": "DeepSeek Harness community"
+      },
+      "homepage": "https://github.com/perelmangao/dsh-plugin-cc",
+      "repository": "https://github.com/perelmangao/dsh-plugin-cc",
+      "license": "MIT",
+      "category": "development",
+      "keywords": ["deepseek", "dsh", "agent", "code-review", "delegation", "bridge"],
+      "source": "./plugins/dsh"
+    }
+  ]
+}

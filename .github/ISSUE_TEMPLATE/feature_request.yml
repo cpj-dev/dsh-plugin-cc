@@ -1,0 +1,31 @@
+name: Feature request / 功能建议
+description: Propose a focused improvement / 提议范围明确的改进
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight / 提交前检查
+      options:
+        - label: I searched existing issues and confirmed this belongs in the plugin rather than DeepSeek Harness. / 我已搜索现有 Issue，并确认该需求属于本插件而非 DeepSeek Harness。
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 问题
+      description: What user problem needs solving? / 需要解决什么用户问题？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior / 建议行为
+      description: Describe the smallest useful behavior, including command examples. / 描述最小可用行为，并提供命令示例。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and compatibility / 替代方案与兼容性
+      description: What alternatives exist, and what could this change break? / 有哪些替代方案？可能破坏哪些兼容性？

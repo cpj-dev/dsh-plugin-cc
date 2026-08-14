@@ -1,0 +1,14 @@
+dsh-plugin-cc
+
+This repository's plugin layout, command-flow conventions, and job/state
+design follow the patterns established by two MIT-licensed Claude Code
+plugins:
+
+- xai-org/grok-build-plugin-cc (bridge command surface, detached run-worker
+  job model, session lifecycle hooks)
+- openai/codex-plugin-cc (unix-socket broker for a shared long-lived agent
+  runtime)
+
+All source files in this repository are original implementations written
+against the DeepSeek Harness (deepseek-ai/deepseek-harness) public CLI and
+SDK wire protocol.

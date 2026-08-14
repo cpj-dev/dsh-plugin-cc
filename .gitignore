@@ -1,0 +1,35 @@
+# Dependencies and generated output
+/node_modules/
+/coverage/
+/.nyc_output/
+/dist/
+/.tmp/
+/tmp/
+*.log
+*.tsbuildinfo
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# Local AI-agent configuration
+/.claude/
+/.codex/
+/.agents/
+
+# Private development notes and drafts
+/.internal/
+/implementation-notes.md
+/docs/internal/
+/docs/plans/

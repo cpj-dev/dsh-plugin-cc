@@ -1,0 +1,23 @@
+{
+  "name": "dsh-plugin-cc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code marketplace repo bridging to the DeepSeek Harness (dsh) CLI and SDK runtime.",
+  "license": "MIT",
+  "author": "DeepSeek Harness community",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/perelmangao/dsh-plugin-cc.git"
+  },
+  "homepage": "https://github.com/perelmangao/dsh-plugin-cc#readme",
+  "bugs": {
+    "url": "https://github.com/perelmangao/dsh-plugin-cc/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\""
+  }
+}

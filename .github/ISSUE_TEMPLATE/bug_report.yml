@@ -1,0 +1,51 @@
+name: Bug report / 缺陷报告
+description: Report a reproducible defect / 报告可复现的缺陷
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve dsh-plugin-cc. Please remove secrets and private paths from all output.
+
+        感谢帮助改进 dsh-plugin-cc。请先从所有输出中移除密钥和私有路径。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight / 提交前检查
+      options:
+        - label: I searched existing issues and read the troubleshooting guide. / 我已搜索现有 Issue 并阅读排障指南。
+          required: true
+        - label: This report contains no credentials or security-sensitive details. / 本报告不包含凭据或安全敏感信息。
+          required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary / 问题摘要
+      description: What happened, and what did you expect? / 实际发生了什么？预期行为是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction / 复现步骤
+      description: Provide the smallest reproducible sequence. / 请提供最小可复现步骤。
+      placeholder: |
+        1. Run ...
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 环境
+      description: OS, Node, plugin, dsh versions, and sanitized `/dsh:check` output. / 操作系统、Node、插件、dsh 版本和脱敏后的 `/dsh:check` 输出。
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / 相关日志
+      description: Include the run ID and a sanitized excerpt when available. / 如有，请提供 run ID 和脱敏日志片段。
+      render: text
