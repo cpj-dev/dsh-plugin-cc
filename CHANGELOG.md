@@ -21,6 +21,7 @@
 
 - `npm test` no longer quotes the `tests/*.test.mjs` glob. Node 20's test runner does not expand globs, so CI on the Node 20 matrix looked for a literal filename and failed even though the suite exists.
 - Plain `/dsh:setup` repairs the `cc` profile when dsh is already available via `DSH_BINARY` or PATH: the CLI install is skipped, and the SDK JSON-RPC server is added from the pinned npm specs plus peers (no checkout required).
+- `/dsh:setup` re-adds the pinned SDK JSON-RPC server and peers when it refreshes a stale npm CLI pin. `--dump-config` only proves the package *name* is present, so a pin bump would otherwise leave the profile on the previous SDK-server/peer versions.
 
 ## 1.0.0 (2026-08-14)
 

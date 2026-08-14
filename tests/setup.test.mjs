@@ -320,11 +320,12 @@ test("setup reinstalls the npm pin when the persisted version is stale", (t) => 
     t.skip("needs Node >= 22.19 to run the harness");
     return;
   }
-  const { dataDir, env } = makeSetupEnv();
+  const { dataDir, dshHome, env } = makeSetupEnv();
   const workspace = makeTempDir("ws-stale-");
 
   const setup = runBridge(["setup", "--cwd", workspace], env, workspace);
   assert.equal(setup.status, 0, setup.stderr);
+  assert.equal(fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n").length, 1);
 
   const configPath = path.join(dataDir, "config.json");
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -335,7 +336,12 @@ test("setup reinstalls the npm pin when the persisted version is stale", (t) => 
   assert.equal(rerun.status, 0, rerun.stderr);
   const report = JSON.parse(rerun.stdout);
   assert.ok(report.actionsTaken.some((line) => line.includes(`Installed ${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}`)));
+  assert.ok(report.actionsTaken.some((line) => line.startsWith(`Refreshed ${HARNESS_SDK_JSONRPC_PACKAGE}`)));
   const next = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(next.npmVersion, HARNESS_NPM_VERSION);
   assert.equal(next.dshInstall, "npm");
+
+  const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
+  assert.equal(addLog.length, 2, "pin refresh must re-add SDK server + peers, not skip because dump-config already names the package");
+  assert.deepEqual(JSON.parse(addLog[1]), ["plugin", "--profile", "cc", "add", ...pinnedSdkServerInstallSpecs()]);
 });

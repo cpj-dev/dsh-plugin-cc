@@ -414,6 +414,7 @@ async function handleSetup(argv) {
   const actionsTaken = [];
 
   let checkoutRoot = null;
+  let refreshProfilePlugins = false;
   const envBinary = String(process.env.DSH_BINARY ?? "").trim();
   if (options.harness) {
     const inspection = linkBuiltHarnessCheckout(path.resolve(cwd, options.harness), {
@@ -437,6 +438,11 @@ async function handleSetup(argv) {
       const binPath = installPinnedDshFromNpm(prefix, { actionsTaken });
       persistNpmCli(prefix, binPath, harnessNode, actionsTaken);
       checkoutRoot = null;
+      // dump-config only checks that the package *name* is present, so a
+      // pin bump would otherwise leave the SDK server and peers at the
+      // previous versions. Re-add the pinned specs whenever we refresh
+      // the CLI (also covers first npm install over an old profile).
+      refreshProfilePlugins = true;
     }
   }
 
@@ -450,7 +456,7 @@ async function handleSetup(argv) {
   //    path adds the pinned npm package plus its published peerDependencies
   //    (self-heal does not provide them; without them cc boot fails).
   const probeBefore = probeProfile("cc", { mustContain: JSONRPC_PLUGIN, cwd });
-  if (!probeBefore.ready) {
+  if (!probeBefore.ready || refreshProfilePlugins) {
     const specs = sdkServerInstallSpecs(checkoutRoot);
     const pnpmStatus = binaryAvailable("pnpm", ["--version"], { cwd });
     if (!pnpmStatus.available) {
@@ -461,7 +467,11 @@ async function handleSetup(argv) {
     if (install.status !== 0) {
       throw new Error(`dsh plugin --profile cc add ${specs.join(" ")} failed:\n${(install.stderr || install.stdout).trim().slice(0, 800)}`);
     }
-    actionsTaken.push(`Installed ${JSONRPC_PLUGIN} into the cc profile from ${specs.join(" ")}.`);
+    actionsTaken.push(
+      probeBefore.ready
+        ? `Refreshed ${JSONRPC_PLUGIN} in the cc profile from ${specs.join(" ")}.`
+        : `Installed ${JSONRPC_PLUGIN} into the cc profile from ${specs.join(" ")}.`
+    );
   }
 
   // 2. Write the managed patch block (idempotent via marker).

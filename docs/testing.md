@@ -7,7 +7,7 @@
 - `args.test.mjs` — argv parsing and raw `$ARGUMENTS` splitting.
 - `state.test.mjs` — state dir resolution, job upsert/prune (incl. log-file cleanup), terminal-claim races (single winner), and the SessionEnd-vs-writer concurrency race (`session-cleanup-writer.mjs` fixture).
 - `dsh.test.mjs` — headless argv composition, model overlay YAML, structured-output parsing, a full `runHeadlessAgent` round-trip against the fake dsh fixture, binary-resolution order (env → npm-pin / harness / config → PATH), and source-checkout inspection.
-- `setup.test.mjs` — `setup` npm-prefix install + registry SDK-server specs against a fake npm/dsh, `--harness` link of a built checkout (absolute-path SDK-server install), refusal of unbuilt checkouts, external `DSH_BINARY` profile repair (no npm prefix), stale npm-pin reinstall, and `check`'s source reporting (skipped on Node < 22.19, the harness floor).
+- `setup.test.mjs` — `setup` npm-prefix install + registry SDK-server specs against a fake npm/dsh, `--harness` link of a built checkout (absolute-path SDK-server install), refusal of unbuilt checkouts, external `DSH_BINARY` profile repair (no npm prefix), stale npm-pin reinstall (CLI + SDK-server/peer re-add), and `check`'s source reporting (skipped on Node < 22.19, the harness floor).
 - `git.test.mjs` — review-target resolution (incl. bad `--base` refusal), context collection, and the empty-diff vs failed-diff distinction on throwaway git repos.
 - `process.test.mjs` — `terminateProcessTree` death confirmation (SIGTERM-ignoring child, descendant trees).
 - `job-control.test.mjs` — `stop` target resolution: terminal refusal, stale reconciliation.
