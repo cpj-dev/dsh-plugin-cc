@@ -14,7 +14,7 @@
 
 | 参数 | 含义 |
 |---|---|
-| 无 | 没有可用源码目录时，将 Harness 的**已验证固定提交**克隆到插件数据目录，然后构建、链接并创建 `cc` profile。即使通过 `DSH_BINARY` 或 PATH 找到 `dsh`，创建 profile 仍需要源码中的 SDK server |
+| 无 | 没有可用源码目录时，将 Harness 的**已验证固定提交**克隆到插件数据目录，然后构建、链接并创建 `cc` profile。即使通过 `DSH_BINARY` 或 PATH 找到 `dsh`，setup 仍会从该检出目录安装已单独发布、但不在 CLI 依赖闭包里的 SDK server |
 | `--harness <checkout-path>` | 使用已有源码目录；验证后按需运行 `pnpm install` 和 `pnpm run build:lib`，生成 Node wrapper，并把 `dshBinary` 与 `harnessCheckout` 保存到 `config.json` |
 | `--skip-build` | 源码未安装或未构建时直接拒绝，不自动构建 |
 

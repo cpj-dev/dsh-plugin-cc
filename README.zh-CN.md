@@ -29,7 +29,7 @@
 /dsh:review
 ```
 
-已有 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录时，可运行 `/dsh:setup --harness <path>`。已有可执行的 `dsh` 时，可通过 `DSH_BINARY` 指定；若多轮 `cc` profile 仍缺失，普通 `/dsh:setup` 会准备所需的源码检出目录。
+已有 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录时，可运行 `/dsh:setup --harness <path>`。已有可执行的 `dsh` 时，可通过 `DSH_BINARY` 指定；若多轮 `cc` profile 仍缺失，普通 `/dsh:setup` 仍会准备固定源码检出，以便从该目录安装已单独发布的 SDK server（`@deepseek-ai/dsh-sdk-jsonrpc-server`，不在 CLI 依赖闭包里）。
 
 ## 命令
 

@@ -29,7 +29,7 @@ Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. The one-command sou
 /dsh:review         # read-only review of your local changes
 ```
 
-Have your own [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) checkout (any location, any version)? `/dsh:setup --harness <path>` uses it instead of cloning. Have a built `dsh` already? `DSH_BINARY` selects that executable; plain `/dsh:setup` may still clone the verified source when the `cc` profile needs its source-only SDK server. Uninstalling: remove the plugin, the plugin data directory (setup's clone lives there), and `~/.dsh/profiles/cc`.
+Have your own [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) checkout (any location, any version)? `/dsh:setup --harness <path>` uses it instead of cloning. Have a built `dsh` already? `DSH_BINARY` selects that executable; plain `/dsh:setup` may still clone the verified source so it can install the separately published SDK server (`@deepseek-ai/dsh-sdk-jsonrpc-server`, outside the CLI dependency closure) from that pinned checkout. Uninstalling: remove the plugin, the plugin data directory (setup's clone lives there), and `~/.dsh/profiles/cc`.
 
 ## Commands
 

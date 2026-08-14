@@ -8,7 +8,7 @@ Start with `/dsh:check`. It is read-only and reports the exact missing prerequis
 
 - **No `dsh` and no checkout:** run `/dsh:setup`. It clones the verified commit into the plugin data directory, builds it, writes a wrapper, and persists that path.
 - **Existing checkout:** run `/dsh:setup --harness <absolute-path>`. The directory must be a DeepSeek Harness checkout.
-- **Existing `DSH_BINARY`, missing `cc` profile:** run `/dsh:setup`. A source checkout is still required because the SDK JSON-RPC server used by the profile is source-only.
+- **Existing `DSH_BINARY`, missing `cc` profile:** run `/dsh:setup`. A source checkout is still required because setup installs the separately published SDK JSON-RPC server (`@deepseek-ai/dsh-sdk-jsonrpc-server`, outside the CLI dependency closure) from the pinned checkout.
 - **Node version error:** plugin commands need Node >= 20, but building DeepSeek Harness needs Node >= 22.19.
 - **`pnpm` missing:** enable Corepack with `corepack enable`, or install a compatible `pnpm`, then rerun setup.
 - **Pinned checkout fails:** setup stops instead of continuing on an unverified branch. Resolve the Git error and rerun; do not bypass the pin for a release installation.
