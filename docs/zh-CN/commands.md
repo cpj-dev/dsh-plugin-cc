@@ -14,11 +14,11 @@
 
 | 参数 | 含义 |
 |---|---|
-| 无 | 没有可用源码目录时，将 Harness 的**已验证固定提交**克隆到插件数据目录，然后构建、链接并创建 `cc` profile。即使通过 `DSH_BINARY` 或 PATH 找到 `dsh`，创建 profile 仍需要源码中的 SDK server |
+| 无 | 没有可用源码目录时，将 Harness 的**已验证固定提交**克隆到插件数据目录，然后构建、链接并创建 `cc` profile。即使通过 `DSH_BINARY` 或 PATH 找到 `dsh`，setup 仍会从该检出目录安装已单独发布、但不在 CLI 依赖闭包里的 SDK server |
 | `--harness <checkout-path>` | 使用已有源码目录；验证后按需运行 `pnpm install` 和 `pnpm run build:lib`，生成 Node wrapper，并把 `dshBinary` 与 `harnessCheckout` 保存到 `config.json` |
 | `--skip-build` | 源码未安装或未构建时直接拒绝，不自动构建 |
 
-Harness 没有 npm 发布包，只能从源码安装。自动克隆需要 `git`；构建需要 Node >= 22.19 和 `pnpm`。setup 会按需安装 `packages/sdk/server`、维护受管 profile 配置，并使用 `--dump-config` 验证结果。重复执行是安全的。
+CLI 已以 `@deepseek-ai/dsh` 发布到 npm；`/dsh:setup` 仍会克隆固定提交的源码，因为 `cc` profile 需要的 `@deepseek-ai/dsh-sdk-jsonrpc-server` 虽已单独发布，但不在 CLI 的依赖闭包里。自动克隆需要 `git`；构建需要 Node >= 22.19 和 `pnpm`。setup 会按需从检出目录 `link:` 安装 `packages/sdk/server`、维护受管 profile 配置，并使用 `--dump-config` 验证结果。重复执行是安全的。
 
 ## `/dsh:review` → `review`，`/dsh:critique` → `critique`
 

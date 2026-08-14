@@ -138,7 +138,8 @@ test("setup --harness on a built checkout links dsh and installs the SDK server 
   assert.ok(fs.existsSync(config.dshBinary));
   assert.match(fs.readFileSync(config.dshBinary, "utf8"), /apps\/cli\/lib\/bin\.js/);
 
-  // The SDK server was added by absolute checkout path (it is not on npm).
+  // The SDK server was added by absolute checkout path (outside the CLI
+  // dependency closure; setup still link:-installs from the checkout).
   const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
   assert.equal(addLog.length, 1);
   const addArgv = JSON.parse(addLog[0]);

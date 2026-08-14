@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Corrected the outdated claim that no `@deepseek-ai/*` packages exist on npm. The CLI is `@deepseek-ai/dsh` (`0.1.0-rc.6`); `@deepseek-ai/dsh-sdk-jsonrpc-server` is published separately and remains outside the CLI dependency closure. Runtime pin is still `0.1.0-rc.5` until the compat-table upgrade procedure is run.
 - Default model selection is now plugin-owned: runs without `--model`/`--effort` use `deepseek-v4-pro` at reasoning effort `max` (previously fell through to the dsh-base defaults — `deepseek-v4-flash`, no forced effort). Applies to one-shot runs, reviews/critiques, and broker sessions; the broker `serve` command gained an `--effort` flag (env: `DSH_CC_EFFORT`) and reports `effort` in its status.
 - `.gitignore` now separates public project documentation from private implementation notes, local agent/editor state, credentials, coverage, and generated output while allowing sanitized `.env.example` files.
 
@@ -20,7 +21,7 @@
 
 ## 1.0.0 (2026-08-14)
 
-Verified against DeepSeek Harness source checkout `0.1.0-rc.5` (commit `47f9438`): full manual acceptance (docs/testing.md checklist — check/setup/review/critique/background runs/session/resume/import/stop, plus the stale-resume, finished-run-stop, and timeout-validation scenarios) run against a source-built dsh with a live `DEEPSEEK_API_KEY`. The harness has no npm distribution; see the README quickstart for the source install flow.
+Verified against DeepSeek Harness source checkout `0.1.0-rc.5` (commit `47f9438`): full manual acceptance (docs/testing.md checklist — check/setup/review/critique/background runs/session/resume/import/stop, plus the stale-resume, finished-run-stop, and timeout-validation scenarios) run against a source-built dsh with a live `DEEPSEEK_API_KEY`. See the README quickstart for the source install flow (the CLI later published as `@deepseek-ai/dsh` on npm).
 
 ### Added
 

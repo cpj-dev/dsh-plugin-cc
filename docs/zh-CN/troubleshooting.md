@@ -8,7 +8,7 @@
 
 - **没有 `dsh`，也没有源码目录：**运行 `/dsh:setup`，自动克隆已验证提交、构建、生成 wrapper 并保存路径。
 - **已有源码目录：**运行 `/dsh:setup --harness <absolute-path>`。
-- **已有 `DSH_BINARY`，但缺少 `cc` profile：**仍需运行 `/dsh:setup`。profile 使用的 SDK JSON-RPC server 只存在于源码目录中。
+- **已有 `DSH_BINARY`，但缺少 `cc` profile：**仍需运行 `/dsh:setup`。setup 会从固定提交的源码检出目录安装已单独发布的 SDK JSON-RPC server（`@deepseek-ai/dsh-sdk-jsonrpc-server`，不在 CLI 依赖闭包里）。
 - **Node 版本错误：**插件命令需要 Node >= 20；构建 DeepSeek Harness 需要 Node >= 22.19。
 - **缺少 `pnpm`：**运行 `corepack enable`，或安装兼容版本的 `pnpm` 后重试。
 - **固定提交检出失败：**setup 会停止，不会在未验证分支上继续。处理 Git 错误后重试，不要在发布安装中绕过固定提交。

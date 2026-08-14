@@ -1,12 +1,12 @@
 # DSH compatibility contract
 
-Everything this plugin assumes about DeepSeek Harness, verified against a **source checkout of `deepseek-ai/deepseek-harness` at 0.1.0-rc.5 (commit 47f9438)** — developer preview; DSH promises no compatibility before its first tagged release. On every dsh upgrade, re-verify each row **before** touching plugin code; each row names its verification command and the plugin file that consumes it.
+Everything this plugin assumes about DeepSeek Harness, verified against a **source checkout of `deepseek-ai/deepseek-harness` at 0.1.0-rc.5 (commit 47f9438)** — developer preview; DSH promises no compatibility before its first tagged release. Distribution facts in the first row were re-checked against npm on 2026-08-14 (`@deepseek-ai/dsh@0.1.0-rc.6`). Runtime behavior is still pinned to rc.5 until the upgrade procedure below is run. On every dsh upgrade, re-verify each row **before** touching plugin code; each row names its verification command and the plugin file that consumes it.
 
-## Distribution (source-only)
+## Distribution
 
 | Fact | Verification | Consumed by |
 |---|---|---|
-| No `@deepseek-ai/*` package exists on the npm registry; the harness runs from a source checkout only (`pnpm install` + `pnpm run build:lib`) | `npm view @deepseek-ai/dsh` fails; repo README | `handleSetup` `--harness`, all install guidance |
+| The dsh CLI is published as `@deepseek-ai/dsh` (`0.1.0-rc.6`) on npm. `@deepseek-ai/dsh-sdk-jsonrpc-server` is also published (`latest` 0.0.1-rc.5, `next` 0.1.0-rc.6) but is **outside the CLI's dependency closure**, so the cc profile must still install it into the profile's own `node_modules`. This plugin's `/dsh:setup` still clones a pinned source checkout and `link:`-installs the SDK server from that tree | `npm view @deepseek-ai/dsh version`; `npm view @deepseek-ai/dsh-sdk-jsonrpc-server dist-tags`; `npm view @deepseek-ai/dsh dependencies` has no sdk-jsonrpc-server | `handleSetup` `--harness`, all install guidance |
 | The built CLI is `apps/cli/lib/bin.js` (`bin: {dsh: lib/bin.js}`, shebang'd); it is **not self-contained** — workspace deps resolve through the checkout's `node_modules` at runtime, so the checkout must stay installed and built in place | `apps/cli/package.json`, `apps/cli/tsdown.config.ts` | `lib/dsh.mjs` `inspectHarnessCheckout`, `writeDshWrapper` |
 | The harness requires Node `^22.19.0 \|\| >=24` and pnpm (corepack-pinned) | `apps/cli/package.json` engines / root `package.json` | `selectHarnessNode`, setup errors |
 | `dsh plugin --profile <p> add <spec>` is a pnpm forwarder; absolute path specs pass through untouched and install as pnpm `link:` — registry-free | `apps/cli/src/plugin.ts` `anchorPathSpec`; `docs/user/develop/basic/publish.md` | `handleSetup` SDK-server install |

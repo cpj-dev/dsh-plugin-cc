@@ -189,8 +189,9 @@ function shorten(text, limit = 96) {
 function ensureDshAvailable(cwd) {
   const availability = getDshAvailability(cwd);
   if (!availability.available) {
-    // DeepSeek Harness has no npm distribution; a source checkout is the
-    // only install path — and plain /dsh:setup performs it end to end.
+    // This plugin still installs from a pinned source checkout (the npm
+    // CLI exists, but the SDK server is outside its dependency closure) —
+    // and plain /dsh:setup performs that end to end.
     throw new Error(
       "The dsh CLI is not available. Run /dsh:setup — it installs DeepSeek Harness from source automatically (or pass --harness <existing-checkout>, or set DSH_BINARY). Then rerun /dsh:check."
     );
@@ -221,8 +222,9 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     : { ready: false, detail: "dsh unavailable; skipped" };
   const brokerStatus = await getBrokerStatus(resolveWorkspaceRoot(cwd));
 
-  // Source-checkout health (the only dsh install path — there is no npm
-  // distribution). Absence is fine when dsh comes from PATH or DSH_BINARY.
+  // Source-checkout health. Absence is fine when dsh comes from PATH or
+  // DSH_BINARY; the checkout is still required to install the SDK server
+  // into the cc profile (it is outside the CLI's dependency closure).
   const configuredCheckout = readPluginConfig().harnessCheckout ?? null;
   let harness = null;
   if (configuredCheckout) {
@@ -359,11 +361,11 @@ function setupHarnessFromSource(checkoutRoot, { skipBuild, actionsTaken }) {
   return inspection;
 }
 
-/** The SDK server ships only inside a checkout; resolve its package dir. */
+/** Resolve the SDK server package dir from a harness checkout. */
 function resolveSdkServerDir(checkoutRoot) {
   if (!checkoutRoot) {
     throw new Error(
-      `The cc profile needs ${JSONRPC_PLUGIN}, which is not on npm — it installs from a harness source checkout. Rerun /dsh:setup --harness <checkout-path>.`
+      `The cc profile needs ${JSONRPC_PLUGIN}, which is outside the CLI's dependency closure — /dsh:setup installs it from a harness source checkout. Rerun /dsh:setup --harness <checkout-path>.`
     );
   }
   const dir = path.join(checkoutRoot, "packages", "sdk", "server");
@@ -425,7 +427,8 @@ async function handleSetup(argv) {
   //    `dsh plugin --profile cc add <spec>` initializes a missing profile
   //    (dsh-base alone for non-shipped names) and forwards to pnpm. The spec
   //    is the checkout's SDK server directory (absolute paths pass through
-  //    to pnpm as link: installs) — the package does not exist on npm.
+  //    to pnpm as link: installs). The package is on npm but outside the
+  //    CLI's dependency closure, so setup still installs from the checkout.
   const probeBefore = probeProfile("cc", { mustContain: JSONRPC_PLUGIN, cwd });
   if (!probeBefore.ready) {
     const sdkServerDir = resolveSdkServerDir(checkoutRoot);
