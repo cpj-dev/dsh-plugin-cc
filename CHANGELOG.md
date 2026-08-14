@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- `npm test` no longer quotes the `tests/*.test.mjs` glob. Node 20's test runner does not expand globs, so CI on the Node 20 matrix looked for a literal filename and failed even though the suite exists.
 - Plain `/dsh:setup` now works when dsh is already available externally (`DSH_BINARY`/PATH) but the cc profile is missing: the auto-clone keys on the missing checkout/profile requirement, not just on dsh availability. Previously that supported configuration failed with "Rerun /dsh:setup --harness" because no SDK server source existed.
 - The auto-clone no longer falls back to the upstream default branch when the pinned verified commit cannot be checked out. It fetches the commit explicitly and retries once; on failure it removes the clone and fails setup instead of silently recording an unpinned harness as pinned.
 

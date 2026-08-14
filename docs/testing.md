@@ -2,7 +2,7 @@
 
 ## Automated (`npm test`)
 
-`npm test` (= `node --test "tests/*.test.mjs"`) — pure-Node tests, no network, no real dsh, no API key:
+`npm test` (= `node --test tests/*.test.mjs`) — pure-Node tests, no network, no real dsh, no API key. The glob is left unquoted so the shell expands it: Node 20's test runner does not expand globs and would otherwise look for a literal `tests/*.test.mjs` file.
 
 - `args.test.mjs` — argv parsing and raw `$ARGUMENTS` splitting.
 - `state.test.mjs` — state dir resolution, job upsert/prune (incl. log-file cleanup), terminal-claim races (single winner), and the SessionEnd-vs-writer concurrency race (`session-cleanup-writer.mjs` fixture).
