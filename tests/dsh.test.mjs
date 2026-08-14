@@ -167,6 +167,18 @@ test("getDshAvailability reports the fake version through DSH_BINARY", async () 
   });
 });
 
+test("writePluginConfig strips null keys", async () => {
+  const dataDir = makeTempDir();
+  await withEnv({ CLAUDE_PLUGIN_DATA: dataDir, DSH_BINARY: undefined }, () => {
+    writePluginConfig({ dshBinary: "/tmp/dsh", harnessCheckout: "/tmp/h", dshInstall: "harness" });
+    writePluginConfig({ harnessCheckout: null, dshInstall: "npm" });
+    const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+    assert.equal(config.harnessCheckout, undefined);
+    assert.equal(config.dshInstall, "npm");
+    assert.equal(config.dshBinary, "/tmp/dsh");
+  });
+});
+
 test("binary resolution order: DSH_BINARY env > persisted config > PATH default", async () => {
   const dataDir = makeTempDir();
   const binDir = makeTempDir("bin-");
@@ -179,6 +191,11 @@ test("binary resolution order: DSH_BINARY env > persisted config > PATH default"
     writePluginConfig({ dshBinary: configured });
     assert.deepEqual(describeDshBinary(), { binary: configured, source: "config", staleConfig: null });
     assert.equal(resolveDshBinary(), configured);
+
+    writePluginConfig({ dshInstall: "npm" });
+    assert.equal(describeDshBinary().source, "npm-pin");
+    writePluginConfig({ dshInstall: "harness", harnessCheckout: "/tmp/harness" });
+    assert.equal(describeDshBinary().source, "harness");
   });
 
   // The env override beats the config.

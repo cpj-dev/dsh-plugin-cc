@@ -27,5 +27,5 @@
 2. Manual acceptance checklist in [testing.md](testing.md) against the pinned dsh version.
 3. Docs synced (README tables, commands.md, dsh-compat.md pin).
 4. English and Simplified Chinese user-entry pages synced; relative links and community templates checked.
-5. `CHANGELOG.md` entry finalized, recording the dsh source version/commit used for acceptance.
+5. `CHANGELOG.md` entry finalized, recording the pinned `@deepseek-ai/dsh` npm version used for acceptance.
 6. Version bumps (plugin.json, marketplace.json ×2, package.json) + tag.

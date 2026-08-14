@@ -9,15 +9,18 @@
 
 ### Changed
 
-- Corrected the outdated claim that no `@deepseek-ai/*` packages exist on npm. The CLI is `@deepseek-ai/dsh` (`0.1.0-rc.6`); `@deepseek-ai/dsh-sdk-jsonrpc-server` is published separately and remains outside the CLI dependency closure. Runtime pin is still `0.1.0-rc.5` until the compat-table upgrade procedure is run.
+- `/dsh:setup` now installs pinned `@deepseek-ai/dsh` from npm (plus `@deepseek-ai/dsh-sdk-jsonrpc-server` and that server's published peerDependencies into the `cc` profile). Auto-clone / `pnpm run build:lib` is gone. `--harness` still links a **user-built** checkout and does not compile it. Runtime pin is `0.1.0-rc.6`. Do not follow npm `latest`/`next` (SDK-server `latest` is not the CLI's `latest`).
 - Default model selection is now plugin-owned: runs without `--model`/`--effort` use `deepseek-v4-pro` at reasoning effort `max` (previously fell through to the dsh-base defaults — `deepseek-v4-flash`, no forced effort). Applies to one-shot runs, reviews/critiques, and broker sessions; the broker `serve` command gained an `--effort` flag (env: `DSH_CC_EFFORT`) and reports `effort` in its status.
 - `.gitignore` now separates public project documentation from private implementation notes, local agent/editor state, credentials, coverage, and generated output while allowing sanitized `.env.example` files.
+
+### Removed
+
+- `/dsh:setup --skip-build`. `--harness` now requires an already-built checkout (`pnpm install && pnpm run build:lib` yourself).
 
 ### Fixed
 
 - `npm test` no longer quotes the `tests/*.test.mjs` glob. Node 20's test runner does not expand globs, so CI on the Node 20 matrix looked for a literal filename and failed even though the suite exists.
-- Plain `/dsh:setup` now works when dsh is already available externally (`DSH_BINARY`/PATH) but the cc profile is missing: the auto-clone keys on the missing checkout/profile requirement, not just on dsh availability. Previously that supported configuration failed with "Rerun /dsh:setup --harness" because no SDK server source existed.
-- The auto-clone no longer falls back to the upstream default branch when the pinned verified commit cannot be checked out. It fetches the commit explicitly and retries once; on failure it removes the clone and fails setup instead of silently recording an unpinned harness as pinned.
+- Plain `/dsh:setup` repairs the `cc` profile when dsh is already available via `DSH_BINARY` or PATH: the CLI install is skipped, and the SDK JSON-RPC server is added from the pinned npm specs plus peers (no checkout required).
 
 ## 1.0.0 (2026-08-14)
 

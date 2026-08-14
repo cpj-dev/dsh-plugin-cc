@@ -6,14 +6,14 @@
 
 - `args.test.mjs` — argv parsing and raw `$ARGUMENTS` splitting.
 - `state.test.mjs` — state dir resolution, job upsert/prune (incl. log-file cleanup), terminal-claim races (single winner), and the SessionEnd-vs-writer concurrency race (`session-cleanup-writer.mjs` fixture).
-- `dsh.test.mjs` — headless argv composition, model overlay YAML, structured-output parsing, a full `runHeadlessAgent` round-trip against the fake dsh fixture, binary-resolution order (env → config → PATH), and source-checkout inspection.
+- `dsh.test.mjs` — headless argv composition, model overlay YAML, structured-output parsing, a full `runHeadlessAgent` round-trip against the fake dsh fixture, binary-resolution order (env → npm-pin / harness / config → PATH), and source-checkout inspection.
+- `setup.test.mjs` — `setup` npm-prefix install + registry SDK-server specs against a fake npm/dsh, `--harness` link of a built checkout (absolute-path SDK-server install), refusal of unbuilt checkouts, external `DSH_BINARY` profile repair (no npm prefix), stale npm-pin reinstall, and `check`'s source reporting (skipped on Node < 22.19, the harness floor).
 - `git.test.mjs` — review-target resolution (incl. bad `--base` refusal), context collection, and the empty-diff vs failed-diff distinction on throwaway git repos.
 - `process.test.mjs` — `terminateProcessTree` death confirmation (SIGTERM-ignoring child, descendant trees).
 - `job-control.test.mjs` — `stop` target resolution: terminal refusal, stale reconciliation.
 - `stop.test.mjs` — bridge-level stop semantics: finished-run refusal (PID-reuse regression), kill+cancel, stale cleanup, and in-flight broker-turn abort.
 - `broker.test.mjs` — broker session continuity, timeout freeing, concurrent-startup convergence, stale-lock reclaim, and socket-ownership rules against the fake SDK runtime.
 - `resume.test.mjs` — resume continuity plus explicit refusal after broker stop/restart (generation checks), `--timeout-ms` validation/forwarding.
-- `setup.test.mjs` — `setup --harness` source install against a fake checkout + fake pnpm: link/install/build orchestration, absolute-path SDK-server install, idempotence, and `check`'s source reporting (skipped on Node < 22.19, the harness floor).
 - `docs.test.mjs` — local Markdown link integrity, required community-health files, reciprocal English/Chinese entry links, and the public/private documentation ignore boundary.
 
 Fixtures: `fake-dsh-fixture.mjs` (records argv/env, prints canned output — point `DSH_BINARY` at a wrapper for it), `fake-sdk-runtime.mjs` (speaks the SDK wire protocol; prompt directives `hang` and `sleep:<ms>` drive timeout tests), `ensure-broker-child.mjs` and `session-cleanup-writer.mjs` (child processes for real cross-process races), `helpers.mjs` (temp dirs, env isolation).

@@ -11,6 +11,9 @@ export function renderCheckReport(report) {
     `${statusIcon(report.node.available)} node — ${report.node.detail}`,
     `${statusIcon(report.dsh.available)} dsh — ${report.dsh.detail}`
   ];
+  if (report.npm) {
+    lines.push(`${statusIcon(report.npm.ok)} npm pin — ${report.npm.detail}`);
+  }
   if (report.harness) {
     lines.push(`${statusIcon(report.harness.ok)} harness checkout — ${report.harness.detail}`);
   }

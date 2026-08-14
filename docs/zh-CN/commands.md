@@ -8,17 +8,16 @@
 
 ## `/dsh:check` → `check`
 
-只读检查以下内容：Node、`dsh` 可执行文件（解析顺序为 `DSH_BINARY` → `setup --harness` 保存的配置 → PATH）、源码目录状态、Harness Node 最低版本（>= 22.19）、凭据、`cc` profile 和 broker。`ready` 表示一次性运行可用；`multiTurnReady` 表示 `--session`、`--resume` 和 `import` 可用。该命令不会安装任何内容。
+只读检查以下内容：Node、`dsh` 可执行文件（解析顺序为 `DSH_BINARY` → `/dsh:setup` 保存的配置 → PATH；来源为 `env` / `npm-pin` / `harness` / `config` / `path`）、可选的 npm prefix 或源码目录状态、Harness Node 最低版本（>= 22.19）、凭据、`cc` profile 和 broker。`ready` 表示一次性运行可用；`multiTurnReady` 表示 `--session`、`--resume` 和 `import` 可用。该命令不会安装任何内容。
 
 ## `/dsh:setup` → `setup`
 
 | 参数 | 含义 |
 |---|---|
-| 无 | 没有可用源码目录时，将 Harness 的**已验证固定提交**克隆到插件数据目录，然后构建、链接并创建 `cc` profile。即使通过 `DSH_BINARY` 或 PATH 找到 `dsh`，setup 仍会从该检出目录安装已单独发布、但不在 CLI 依赖闭包里的 SDK server |
-| `--harness <checkout-path>` | 使用已有源码目录；验证后按需运行 `pnpm install` 和 `pnpm run build:lib`，生成 Node wrapper，并把 `dshBinary` 与 `harnessCheckout` 保存到 `config.json` |
-| `--skip-build` | 源码未安装或未构建时直接拒绝，不自动构建 |
+| 无 | 一键安装：把 `@deepseek-ai/dsh@<HARNESS_NPM_VERSION>` 装进插件数据目录的 npm prefix，写成 wrapper，并创建 `cc` profile。已通过 `DSH_BINARY` 或 PATH 找到 `dsh` 时跳过 CLI 安装。版本是精确 pin，不跟随 `latest`/`next` |
+| `--harness <checkout-path>` | 使用**已经构建好**的 DeepSeek Harness 源码目录：校验 `apps/cli/lib/bin.js` 存在（插件不再代跑 `pnpm install` / `build:lib`），生成 Node wrapper，并把 `dshBinary`、`dshInstall: harness`、`harnessCheckout` 写入 `config.json` |
 
-CLI 已以 `@deepseek-ai/dsh` 发布到 npm；`/dsh:setup` 仍会克隆固定提交的源码，因为 `cc` profile 需要的 `@deepseek-ai/dsh-sdk-jsonrpc-server` 虽已单独发布，但不在 CLI 的依赖闭包里。自动克隆需要 `git`；构建需要 Node >= 22.19 和 `pnpm`。setup 会按需从检出目录 `link:` 安装 `packages/sdk/server`、维护受管 profile 配置，并使用 `--dump-config` 验证结果。重复执行是安全的。
+`/dsh:setup` 仍会执行 `dsh plugin --profile cc add`，装入 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` **以及该包已发布的 peerDependencies**——SDK server 不在 CLI 依赖闭包里，launcher 的 profile self-heal 也不会提供这些 peers（只 add server 会在启动时出现 `Cannot find package '@deepseek-ai/dsh-sdk-protocol'`）。`--harness` 则从检出目录 `link:` 安装 `packages/sdk/server`。随后写入受管 patch 块（标记 `# managed by dsh-plugin-cc`），并用 `--dump-config` 验证。运行 Harness 需要 Node >= 22.19；默认 CLI 安装需要 `npm`；`dsh plugin add` 需要 `pnpm`（`corepack enable`）。重复执行是安全的。
 
 ## `/dsh:review` → `review`，`/dsh:critique` → `critique`
 

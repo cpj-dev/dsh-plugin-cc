@@ -23,7 +23,7 @@ https://github.com/cpj-dev/dsh-plugin-cc/security/advisories/new
 - **凭据：**插件不会读取或传输 `DEEPSEEK_API_KEY` 的值，只检查其来源供 `/dsh:check` 判断就绪状态。密钥由插件启动的 DeepSeek Harness 进程使用。
 - **沙箱：**审查和评审始终只读；任务默认只读，只有显式 `--write` 才使用 `workspace-write`。插件不会使用 `danger-full-access`。
 - **分离进程：**后台任务和 broker 可能在 Claude 会话结束后继续运行。使用 `/dsh:runs --all` 查看，使用 `/dsh:stop` 或 `/dsh:stop --broker` 终止。
-- **网络：**bridge 脚本只启动本地进程；模型 API 网络请求发生在 dsh 内部，`git clone` 等网络命令由用户显式触发。
+- **网络：**`/dsh:setup` 会调用 `npm install`（把固定版本的 CLI 装进插件数据目录）以及 `dsh plugin add`（pnpm 拉取 SDK JSON-RPC server 及其已发布的 peers）。其他 bridge 命令只启动本地进程；模型 API 流量发生在 dsh 内部。
 
 ## 披露与致谢
 

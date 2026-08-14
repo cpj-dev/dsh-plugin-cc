@@ -37,9 +37,10 @@ and maintainer availability; status updates stay in the private advisory.
   detached processes that outlive the Claude session. `/dsh:runs --all`,
   `/dsh:stop`, and `/dsh:stop --broker` enumerate and terminate them; the
   SessionEnd hook cancels the session's own runs.
-- **No network access in the bridge.** The bridge scripts spawn local
-  processes only; all network traffic happens inside dsh (model API) or in
-  commands you run yourself (e.g. `git clone`).
+- **Network.** `/dsh:setup` invokes `npm install` (pinned CLI into the
+  plugin data directory) and `dsh plugin add` (pnpm fetches the SDK JSON-RPC
+  server and its published peers). Other bridge commands spawn local
+  processes only; model API traffic stays inside dsh.
 
 ## Disclosure and credit
 

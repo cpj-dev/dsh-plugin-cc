@@ -7,13 +7,13 @@
 
 一个连接 Claude Code 与 **DeepSeek Harness**（`dsh`）的插件市场项目。它提供代码审查、对抗式设计评审、任务委派、后台运行，以及可恢复的多轮 dsh 会话。
 
-本项目基于 DeepSeek Harness `0.1.0-rc.5` 的源码检出版本开发（开发者预览；CLI 已以 [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) 发布到 npm，但本插件需要的 SDK server 不在该包的依赖闭包里）。依赖的具体行为和固定提交记录在 [DSH 兼容性契约](docs/dsh-compat.md) 中；升级 dsh 前必须重新验证。
+本项目基于 [`@deepseek-ai/dsh@0.1.0-rc.6`](https://www.npmjs.com/package/@deepseek-ai/dsh) 开发（开发者预览；本插件需要的 SDK JSON-RPC server 已单独发布为 [`@deepseek-ai/dsh-sdk-jsonrpc-server`](https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-jsonrpc-server)，不在 CLI 依赖闭包里）。依赖的具体行为记录在 [DSH 兼容性契约](docs/dsh-compat.md) 中；升级 dsh 前必须重新验证。
 
 > 英文文档是技术事实的权威版本。中文文档覆盖安装、命令、排障、贡献和安全流程；命令名、参数、环境变量、路径和 JSON 字段保持英文，以确保兼容性。
 
 ## 快速开始
 
-插件命令需要 Node >= 20 和 `DEEPSEEK_API_KEY`。一键源码构建还需要 `git`、Node >= 22.19，以及 `pnpm`（或运行 `corepack enable`）；这些是 DeepSeek Harness 的构建要求。
+插件命令需要 Node >= 20 和 `DEEPSEEK_API_KEY`。通过 `/dsh:setup` 安装 dsh 还需要 Node >= 22.19（Harness 下限）、`npm`，以及 `pnpm`（`corepack enable`），因为 `dsh plugin add` 会转发给 pnpm。
 
 ```bash
 # 1. 安装插件
@@ -21,7 +21,8 @@
 /plugin install dsh@deepseek-dsh
 
 # 2. 首次执行一键安装
-#    自动克隆已验证的 Harness 提交、构建并创建多轮 cc profile
+#    从 npm 安装 @deepseek-ai/dsh@0.1.0-rc.6，并把 SDK JSON-RPC server
+#    （及其 peers）加入多轮 cc profile
 /dsh:setup
 
 # 3. 在任意 Git 仓库中检查并审查
@@ -29,14 +30,14 @@
 /dsh:review
 ```
 
-已有 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录时，可运行 `/dsh:setup --harness <path>`。已有可执行的 `dsh` 时，可通过 `DSH_BINARY` 指定；若多轮 `cc` profile 仍缺失，普通 `/dsh:setup` 仍会准备固定源码检出，以便从该目录安装已单独发布的 SDK server（`@deepseek-ai/dsh-sdk-jsonrpc-server`，不在 CLI 依赖闭包里）。
+已有**已构建**的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录时，可运行 `/dsh:setup --harness <path>`（目录必须已经执行过 `pnpm install` 和 `pnpm run build:lib`）。已有可执行的 `dsh` 时，可通过 `DSH_BINARY` 指定；普通 `/dsh:setup` 仍会从固定版本的 npm 包装入 `cc` profile。卸载：删除插件、插件数据目录（npm prefix 在其中）以及 `~/.dsh/profiles/cc`。
 
 ## 命令
 
 | 命令 | 作用 | 是否需要 setup |
 |---|---|---|
-| `/dsh:check` | 检查 dsh、源码、凭据、profile 和 broker | 否 |
-| `/dsh:setup` | 从源码安装/链接 dsh，并创建多轮 `cc` profile | — |
+| `/dsh:check` | 检查 dsh、npm pin / 源码检出、凭据、profile 和 broker | 否 |
+| `/dsh:setup` | 安装/链接固定版本的 npm CLI（或 `--harness <已构建源码目录>`），并创建多轮 `cc` profile | — |
 | `/dsh:review [focus]` | 以只读模式审查本地改动 | 否 |
 | `/dsh:critique [focus]` | 执行结构化对抗式设计评审 | 否 |
 | `/dsh:run <task>` | 执行一次性或可恢复任务 | `--session`/`--resume` 需要 |

@@ -6,17 +6,16 @@ Every `/dsh:*` command maps to one `dsh-bridge.mjs` subcommand; the markdown fil
 
 ## `/dsh:check` → `check`
 
-Readiness probe: node, the `dsh` binary (resolution: `DSH_BINARY` env → persisted config from `setup --harness` → PATH; the report names the source), the configured source checkout's health (path, version/commit, installed/built), harness Node-floor compliance (>= 22.19), credentials (env / `$DSH_HOME/.credentials.yaml` / `.env`), the multi-turn `cc` profile, and the broker. Read-only; never installs anything. `ready` covers the one-shot path; `multiTurnReady` covers `--session`/`--resume`/`import`.
+Readiness probe: node, the `dsh` binary (resolution: `DSH_BINARY` env → persisted config from `/dsh:setup` → PATH; the report names the source as `env` / `npm-pin` / `harness` / `config` / `path`), optional npm-prefix or source-checkout health, harness Node-floor compliance (>= 22.19), credentials (env / `$DSH_HOME/.credentials.yaml` / `.env`), the multi-turn `cc` profile, and the broker. Read-only; never installs anything. `ready` covers the one-shot path; `multiTurnReady` covers `--session`/`--resume`/`import`.
 
 ## `/dsh:setup` → `setup`
 
 | Flag | Meaning |
 |---|---|
-| *(none)* | one-command install when no usable source checkout is configured: clone the harness — **pinned to the verified commit** (`HARNESS_PINNED_COMMIT` in `lib/dsh.mjs`; the harness promises breaking changes, so "latest" is unsafe) — into the plugin data dir (or repair the previously configured checkout), then build and link as below. A `dsh` found through `DSH_BINARY` or PATH does not remove the source requirement for creating the `cc` profile |
-| `--harness <checkout-path>` | use an existing DeepSeek Harness checkout instead of cloning: validate it, run `pnpm install` / `pnpm run build:lib` when missing (progress on stderr), write a node wrapper, persist it as this machine's dsh (`config.json`: `dshBinary`, `harnessCheckout`) |
-| `--skip-build` | refuse instead of building when the checkout is not installed/built |
+| *(none)* | one-command install: `npm install --prefix <plugin-data>/npm @deepseek-ai/dsh@<HARNESS_NPM_VERSION>`, wrap it as this machine's dsh, then create the `cc` profile. A `dsh` already found through `DSH_BINARY` or PATH skips the CLI install. Versions are exact pins — `latest`/`next` are not used |
+| `--harness <checkout-path>` | use an existing **already built** DeepSeek Harness checkout: validate `apps/cli/lib/bin.js` exists (the plugin does not run `pnpm install` / `build:lib`), write a node wrapper, persist `config.json` (`dshBinary`, `dshInstall: harness`, `harnessCheckout`) |
 
-The CLI is on npm as `@deepseek-ai/dsh`; `/dsh:setup` still clones a pinned source checkout because the cc profile installs `@deepseek-ai/dsh-sdk-jsonrpc-server` from that tree by absolute path (it is published on npm but **outside the CLI's dependency closure**). Auto-clone needs `git`; building needs Node >= 22.19 and pnpm — `corepack enable`. Independently of the install, every run creates and verifies the `cc` profile: `dsh plugin --profile cc add <checkout>/packages/sdk/server` when missing (absolute path → pnpm `link:`), appends a managed patch block (marker `# managed by dsh-plugin-cc`: `hmr` disabled, `approval.policy: never`, the JSON-RPC server row), then verifies with `--dump-config`. Idempotent.
+`/dsh:setup` still has to `dsh plugin --profile cc add` `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` **together with that package's published peerDependencies** — the server is outside the CLI dependency closure, and the launcher's profile self-heal does not provide the peers (a server-only add boots with `Cannot find package '@deepseek-ai/dsh-sdk-protocol'`). `--harness` instead `link:`-installs `<checkout>/packages/sdk/server`. Then setup appends a managed patch block (marker `# managed by dsh-plugin-cc`: `hmr` disabled, `approval.policy: never`, the JSON-RPC server row) and verifies with `--dump-config`. Needs Node >= 22.19 to run the harness, `npm` for the default CLI install, and `pnpm` for `dsh plugin add` (`corepack enable`). Idempotent.
 
 ## `/dsh:review` → `review`, `/dsh:critique` → `critique`
 
