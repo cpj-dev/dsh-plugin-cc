@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability / 安全漏洞
-    url: https://github.com/perelmangao/dsh-plugin-cc/security/advisories/new
+    url: https://github.com/cpj-dev/dsh-plugin-cc/security/advisories/new
     about: Report vulnerabilities privately; never include sensitive details in a public issue. / 请私下报告漏洞，不要在公开 Issue 中包含敏感信息。
   - name: DeepSeek Harness
     url: https://github.com/deepseek-ai/deepseek-harness

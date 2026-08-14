@@ -5,8 +5,8 @@
   "author": {
     "name": "DeepSeek Harness community"
   },
-  "homepage": "https://github.com/perelmangao/dsh-plugin-cc",
-  "repository": "https://github.com/perelmangao/dsh-plugin-cc",
+  "homepage": "https://github.com/cpj-dev/dsh-plugin-cc",
+  "repository": "https://github.com/cpj-dev/dsh-plugin-cc",
   "license": "MIT",
   "keywords": ["deepseek", "dsh", "agent", "code-review", "delegation", "bridge"]
 }

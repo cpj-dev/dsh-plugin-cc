@@ -8,11 +8,11 @@
   "author": "DeepSeek Harness community",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/perelmangao/dsh-plugin-cc.git"
+    "url": "git+https://github.com/cpj-dev/dsh-plugin-cc.git"
   },
-  "homepage": "https://github.com/perelmangao/dsh-plugin-cc#readme",
+  "homepage": "https://github.com/cpj-dev/dsh-plugin-cc#readme",
   "bugs": {
-    "url": "https://github.com/perelmangao/dsh-plugin-cc/issues"
+    "url": "https://github.com/cpj-dev/dsh-plugin-cc/issues"
   },
   "engines": {
     "node": ">=20"
