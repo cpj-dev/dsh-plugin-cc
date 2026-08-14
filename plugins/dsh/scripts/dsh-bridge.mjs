@@ -243,23 +243,8 @@ async function buildCheckReport(cwd, actionsTaken = []) {
         : inspection.reason
     };
   }
-  let npm = null;
-  if (pluginConfig.dshInstall === "npm" && pluginConfig.npmPrefix) {
-    const binPath = resolveNpmCliBin(pluginConfig.npmPrefix);
-    const binOk = fs.existsSync(binPath);
-    const pinMatches = pluginConfig.npmVersion === HARNESS_NPM_VERSION;
-    npm = {
-      ok: binOk && pinMatches,
-      prefix: pluginConfig.npmPrefix,
-      version: pluginConfig.npmVersion ?? null,
-      detail: !binOk
-        ? `${pluginConfig.npmPrefix} is missing ${binPath}`
-        : !pinMatches
-          ? `${pluginConfig.npmPrefix} (${HARNESS_CLI_PACKAGE}@${pluginConfig.npmVersion ?? "unknown"}; plugin pin is ${HARNESS_NPM_VERSION})`
-          : `${pluginConfig.npmPrefix} (${HARNESS_CLI_PACKAGE}@${pluginConfig.npmVersion})`
-    };
-  }
-  const expectedProfileIdentity = expectedSdkProfileIdentity(pluginConfig);
+  const npm = describeNpmInstall(pluginConfig);
+  const expectedProfileIdentity = expectedSdkProfileIdentity(pluginConfig, binaryInfo.source);
   const actualProfileIdentity = pluginConfig.sdkProfileVersion ?? null;
   if (dshStatus.available && profileStatus.ready && actualProfileIdentity !== expectedProfileIdentity) {
     profileStatus = {
@@ -411,12 +396,47 @@ function sdkProfileIdentityForSetup(checkoutRoot) {
   return checkoutRoot ? harnessSdkProfileIdentity(checkoutRoot) : npmSdkProfileIdentity();
 }
 
-/** Identity check expects for the persisted install source. */
-function expectedSdkProfileIdentity(config) {
-  if (config.dshInstall === "harness" && config.harnessCheckout) {
+/**
+ * Identity check expects, mirroring which SDK source handleSetup would pick
+ * now. The checkout counts only while it is the dsh actually in use:
+ * DSH_BINARY (or a vanished wrapper) sends setup down the registry-spec path
+ * whatever the config still records, so keying on `dshInstall` alone would
+ * demand a `harness:` identity that no rerun can ever produce.
+ */
+function expectedSdkProfileIdentity(config, binarySource) {
+  if (binarySource === "harness" && config.harnessCheckout) {
     return harnessSdkProfileIdentity(config.harnessCheckout);
   }
   return npmSdkProfileIdentity();
+}
+
+/**
+ * Health of the persisted npm CLI install, or null when setup never wrote
+ * one. `ok` is the single definition of "the pinned CLI is in place": check
+ * reports it and handleSetup reinstalls on it, so a prefix that lost its
+ * bin.js cannot look healthy to one and broken to the other.
+ */
+function describeNpmInstall(config) {
+  if (config.dshInstall !== "npm") {
+    return null;
+  }
+  const prefix = config.npmPrefix ?? null;
+  const binPath = prefix ? resolveNpmCliBin(prefix) : null;
+  const binOk = Boolean(binPath) && fs.existsSync(binPath);
+  const pinMatches = config.npmVersion === HARNESS_NPM_VERSION;
+  const version = config.npmVersion ?? null;
+  return {
+    ok: binOk && pinMatches,
+    prefix,
+    version,
+    detail: !prefix
+      ? `${HARNESS_CLI_PACKAGE} is recorded as an npm install with no prefix`
+      : !binOk
+        ? `${prefix} is missing ${binPath}`
+        : !pinMatches
+          ? `${prefix} (${HARNESS_CLI_PACKAGE}@${version ?? "unknown"}; plugin pin is ${HARNESS_NPM_VERSION})`
+          : `${prefix} (${HARNESS_CLI_PACKAGE}@${version})`
+  };
 }
 
 /** True when persisted config is a source checkout, including pre-npm-pin installs. */
@@ -476,11 +496,13 @@ async function handleSetup(argv) {
   } else {
     const config = readPluginConfig();
     const dshAvailable = getDshAvailability(cwd).available;
-    const npmPinStale = config.dshInstall === "npm" && config.npmVersion !== HARNESS_NPM_VERSION;
-    // Pre-npm configs only stored dshBinary + harnessCheckout. A still-
-    // runnable wrapper must not keep the machine on the old source install;
-    // only an explicit --harness this run retains a checkout.
-    if (!dshAvailable || npmPinStale || isLegacySourceInstall(config)) {
+    // A stale pin or a prefix that lost its bin.js both need the reinstall
+    // even while some other dsh answers on PATH. Pre-npm configs only stored
+    // dshBinary + harnessCheckout; a still-runnable wrapper must not keep the
+    // machine on the old source install, and only an explicit --harness this
+    // run retains a checkout.
+    const npmInstall = describeNpmInstall(config);
+    if (!dshAvailable || (npmInstall && !npmInstall.ok) || isLegacySourceInstall(config)) {
       const harnessNode = requireHarnessNode();
       const prefix = resolveNpmInstallDir();
       const binPath = installPinnedDshFromNpm(prefix, { actionsTaken });

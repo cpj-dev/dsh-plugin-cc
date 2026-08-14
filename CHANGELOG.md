@@ -26,6 +26,8 @@
 - `/dsh:check` treats a stale npm CLI pin or profile identity as not ready and adds `nextSteps` to rerun setup.
 - No-args `/dsh:setup` migrates a persisted source install (pre-npm `harnessCheckout`, or `dshInstall: harness`) to the npm pin. Only an explicit `--harness` this run keeps a checkout.
 - `--harness` errors when `packages/sdk/server` is missing instead of silently adding the npm SDK-server pin beside a custom CLI.
+- `/dsh:check` no longer reports the `cc` profile as stale forever when `DSH_BINARY` is set on a machine that previously ran `/dsh:setup --harness`. Setup uses the pinned registry specs whenever the checkout is not the dsh in use, so the expected profile identity now follows the resolved binary instead of the persisted `dshInstall`; the old rule demanded a `harness:` identity no rerun could produce.
+- `/dsh:setup` reinstalls the npm pin when the plugin's npm prefix lost its `bin.js` (moved or partially cleaned) while another `dsh` answers on PATH. Setup and `/dsh:check` now share one definition of a healthy npm install, so setup no longer skips the repair that check keeps asking for.
 
 ## 1.0.0 (2026-08-14)
 

@@ -166,7 +166,15 @@ function makeSetupEnv() {
     FAKE_DSH_BIN_TEMPLATE: templatePath,
     PATH: `${fakeBinDir}:${process.env.PATH}`
   };
-  return { dataDir, dshHome, env };
+  return { dataDir, dshHome, fakeBinDir, templatePath, env };
+}
+
+/** A dsh the plugin did not install, for DSH_BINARY / PATH scenarios. */
+function writeExternalDsh(dir = makeTempDir("external-dsh-")) {
+  fs.writeFileSync(path.join(dir, "bin.js"), FAKE_BIN_SOURCE);
+  const dsh = path.join(dir, "dsh");
+  fs.writeFileSync(dsh, `#!/bin/sh\nexec "${process.execPath}" "${dir}/bin.js" "$@"\n`, { mode: 0o755 });
+  return dsh;
 }
 
 function runBridge(args, env, cwd) {
@@ -399,12 +407,7 @@ test("plain setup with an external dsh adds the SDK server from npm specs", (t) 
   const { dataDir, dshHome, env } = makeSetupEnv();
   const workspace = makeTempDir("ws-external-");
 
-  const externalDir = makeTempDir("external-dsh-");
-  fs.writeFileSync(path.join(externalDir, "bin.js"), FAKE_BIN_SOURCE);
-  const externalDsh = path.join(externalDir, "dsh");
-  fs.writeFileSync(externalDsh, `#!/bin/sh\nexec "${process.execPath}" "${externalDir}/bin.js" "$@"\n`, { mode: 0o755 });
-
-  const extEnv = { ...env, DSH_BINARY: externalDsh };
+  const extEnv = { ...env, DSH_BINARY: writeExternalDsh() };
   const result = runBridge(["setup", "--json", "--cwd", workspace], extEnv, workspace);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const report = JSON.parse(result.stdout);
@@ -594,12 +597,7 @@ test("external dsh with a ready profile still refreshes pinned SDK specs", (t) =
   const workspace = makeTempDir("ws-ext-stale-profile-");
   seedReadyCcProfile(dshHome);
 
-  const externalDir = makeTempDir("external-dsh-");
-  fs.writeFileSync(path.join(externalDir, "bin.js"), FAKE_BIN_SOURCE);
-  const externalDsh = path.join(externalDir, "dsh");
-  fs.writeFileSync(externalDsh, `#!/bin/sh\nexec "${process.execPath}" "${externalDir}/bin.js" "$@"\n`, { mode: 0o755 });
-
-  const result = runBridge(["setup", "--json", "--cwd", workspace], { ...env, DSH_BINARY: externalDsh }, workspace);
+  const result = runBridge(["setup", "--json", "--cwd", workspace], { ...env, DSH_BINARY: writeExternalDsh() }, workspace);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const report = JSON.parse(result.stdout);
   assert.ok(report.actionsTaken.some((line) => line.startsWith(`Refreshed ${HARNESS_SDK_JSONRPC_PACKAGE}`)));
@@ -608,4 +606,68 @@ test("external dsh with a ready profile still refreshes pinned SDK specs", (t) =
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
   assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
   assert.notEqual(config.dshInstall, "npm");
+});
+
+test("DSH_BINARY over a persisted checkout reports the profile it just wrote as ready", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-env-over-harness-");
+  const checkout = writeFakeCheckout(makeTempDir("harness-env-"));
+
+  const linked = runBridge(["setup", "--json", "--harness", checkout, "--cwd", workspace], env, workspace);
+  assert.equal(linked.status, 0, linked.stderr);
+  assert.equal(JSON.parse(linked.stdout).multiTurnReady, true);
+
+  // DSH_BINARY sends setup down the registry-spec path, so the leftover
+  // harnessCheckout must not make check demand a `harness:` identity that no
+  // rerun can produce.
+  const extEnv = { ...env, DSH_BINARY: writeExternalDsh() };
+  const result = runBridge(["setup", "--json", "--cwd", workspace], extEnv, workspace);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.profile.ready, true);
+  assert.equal(report.multiTurnReady, true);
+
+  const check = JSON.parse(runBridge(["check", "--json", "--cwd", workspace], extEnv, workspace).stdout);
+  assert.equal(check.profile.ready, true);
+  assert.equal(check.multiTurnReady, true);
+  assert.ok(!check.nextSteps.some((step) => step.includes("cc profile plugins")));
+  const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
+});
+
+test("setup reinstalls the npm pin when the prefix lost its CLI, even with dsh on PATH", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, fakeBinDir, templatePath, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-npm-repair-");
+
+  const first = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(first.status, 0, first.stderr);
+
+  // The prefix and wrapper are cleaned while an unrelated dsh answers on
+  // PATH: availability alone must not convince setup the pin is installed.
+  fs.rmSync(path.join(dataDir, "npm"), { recursive: true, force: true });
+  fs.rmSync(path.join(dataDir, "bin"), { recursive: true, force: true });
+  fs.writeFileSync(path.join(fakeBinDir, "dsh"), `#!/bin/sh\nexec "${process.execPath}" "${templatePath}" "$@"\n`, {
+    mode: 0o755
+  });
+
+  const stale = JSON.parse(runBridge(["check", "--json", "--cwd", workspace], env, workspace).stdout);
+  assert.equal(stale.npm.ok, false);
+
+  const repair = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(repair.status, 0, repair.stderr);
+  const report = JSON.parse(repair.stdout);
+  assert.ok(report.actionsTaken.some((line) => line.includes(`Installed ${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}`)));
+  assert.ok(fs.existsSync(resolveNpmCliBin(path.join(dataDir, "npm"))));
+  assert.equal(report.npm.ok, true);
+  assert.equal(report.dsh.source, "npm-pin");
+  assert.equal(report.multiTurnReady, true);
+  assert.deepEqual(report.nextSteps, []);
 });
