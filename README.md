@@ -7,11 +7,11 @@
 
 A Claude Code plugin marketplace that bridges to the **DeepSeek Harness** (`dsh`) agent: code review, adversarial critique, task delegation, background runs, and multi-turn resumable dsh sessions — all from Claude Code slash commands.
 
-Built against a source checkout of DeepSeek Harness `0.1.0-rc.5` (developer preview; the CLI ships as [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) on npm, but the SDK server this plugin needs is outside that package's dependency closure). The exact DSH behaviors this plugin depends on are pinned in [docs/dsh-compat.md](docs/dsh-compat.md); re-verify that table when upgrading dsh.
+Built against [`@deepseek-ai/dsh@0.1.0-rc.6`](https://www.npmjs.com/package/@deepseek-ai/dsh) (developer preview; the SDK JSON-RPC server this plugin needs is published separately as [`@deepseek-ai/dsh-sdk-jsonrpc-server`](https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-jsonrpc-server) and is outside the CLI dependency closure). The exact DSH behaviors this plugin depends on are pinned in [docs/dsh-compat.md](docs/dsh-compat.md); re-verify that table when upgrading dsh.
 
 ## Quick start
 
-Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. The one-command source build also requires `git`, Node >= 22.19, and `pnpm` (or `corepack enable`) because those are DeepSeek Harness build requirements.
+Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. Installing dsh via `/dsh:setup` also needs Node >= 22.19 (harness floor), `npm`, and `pnpm` (`corepack enable`) because `dsh plugin add` forwards to pnpm.
 
 ```bash
 # 1. Install the plugin
@@ -19,9 +19,8 @@ Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. The one-command sou
 /plugin install dsh@deepseek-dsh
 
 # 2. One command, one time: /dsh:setup does everything
-#    (the CLI is on npm as @deepseek-ai/dsh; setup still clones a pinned
-#     source checkout because the cc profile's SDK server is not in the
-#     CLI dependency tree. First run takes a few minutes.)
+#    Installs @deepseek-ai/dsh@0.1.0-rc.6 from npm, then adds the SDK
+#    JSON-RPC server (and its peers) to the multi-turn cc profile.
 /dsh:setup
 
 # 3. In any git repository:
@@ -29,14 +28,14 @@ Plugin commands require Node >= 20 and a `DEEPSEEK_API_KEY`. The one-command sou
 /dsh:review         # read-only review of your local changes
 ```
 
-Have your own [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) checkout (any location, any version)? `/dsh:setup --harness <path>` uses it instead of cloning. Have a built `dsh` already? `DSH_BINARY` selects that executable; plain `/dsh:setup` may still clone the verified source so it can install the separately published SDK server (`@deepseek-ai/dsh-sdk-jsonrpc-server`, outside the CLI dependency closure) from that pinned checkout. Uninstalling: remove the plugin, the plugin data directory (setup's clone lives there), and `~/.dsh/profiles/cc`.
+Have your own built [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) checkout? `/dsh:setup --harness <path>` uses it instead of npm (the directory must already be `pnpm install`'d and `pnpm run build:lib`'d). A later `/dsh:setup` with no args migrates that machine to the npm pin; pass `--harness` again to keep the checkout. Have a built `dsh` already? `DSH_BINARY` selects that executable; plain `/dsh:setup` still creates the `cc` profile from the pinned npm SDK-server package. Uninstalling: remove the plugin, the plugin data directory (the npm prefix lives there), and `~/.dsh/profiles/cc`.
 
 ## Commands
 
 | Command | What it does | Needs setup? |
 |---|---|---|
-| `/dsh:check` | Readiness probe (dsh, source checkout, credentials, profile, broker) | no |
-| `/dsh:setup` | Install/link dsh from a source checkout (`--harness <path>`) and create the multi-turn `cc` profile | — |
+| `/dsh:check` | Readiness probe (dsh, npm pin / checkout, credentials, profile, broker) | no |
+| `/dsh:setup` | Install/link the pinned npm CLI (or `--harness <built-checkout>`) and create the multi-turn `cc` profile | — |
 | `/dsh:review [focus]` | Read-only code review of local changes | no |
 | `/dsh:critique [focus]` | Structured adversarial design critique | no |
 | `/dsh:run <task>` | Run a task (read-only by default; `--write`, `--session`, `--resume`, `--model`, `--effort`, `--background`) | only for `--session`/`--resume` |

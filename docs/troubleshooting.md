@@ -4,14 +4,17 @@
 
 Start with `/dsh:check`. It is read-only and reports the exact missing prerequisite plus the next action.
 
-## Setup cannot find or build DeepSeek Harness
+## Setup cannot find DeepSeek Harness
 
-- **No `dsh` and no checkout:** run `/dsh:setup`. It clones the verified commit into the plugin data directory, builds it, writes a wrapper, and persists that path.
-- **Existing checkout:** run `/dsh:setup --harness <absolute-path>`. The directory must be a DeepSeek Harness checkout.
-- **Existing `DSH_BINARY`, missing `cc` profile:** run `/dsh:setup`. A source checkout is still required because setup installs the separately published SDK JSON-RPC server (`@deepseek-ai/dsh-sdk-jsonrpc-server`, outside the CLI dependency closure) from the pinned checkout.
-- **Node version error:** plugin commands need Node >= 20, but building DeepSeek Harness needs Node >= 22.19.
-- **`pnpm` missing:** enable Corepack with `corepack enable`, or install a compatible `pnpm`, then rerun setup.
-- **Pinned checkout fails:** setup stops instead of continuing on an unverified branch. Resolve the Git error and rerun; do not bypass the pin for a release installation.
+- **No `dsh`:** run `/dsh:setup`. It installs `@deepseek-ai/dsh@<pin>` from npm into the plugin data directory, writes a wrapper, and creates the `cc` profile.
+- **Existing built checkout:** run `/dsh:setup --harness <absolute-path>`. The directory must already be installed and built (`pnpm install && pnpm run build:lib`); the plugin will not compile it. A later no-args `/dsh:setup` migrates a persisted source install to the npm pin.
+- **Existing `DSH_BINARY`, missing or stale `cc` profile:** run `/dsh:setup`. It adds `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` and that package's published peers into the profile even if `--dump-config` already names the package (tracked as `sdkProfileVersion`: `npm:<pin>` or `harness:<realpath>`).
+- **`/dsh:check` says the npm pin or cc profile is stale:** the persisted CLI version or profile identity does not match this plugin release (or the current `--harness` checkout). Rerun `/dsh:setup` (pass `--harness` again to keep a checkout).
+- **Node version error:** plugin commands need Node >= 20; running DeepSeek Harness needs Node >= 22.19.
+- **`npm` missing:** install Node (npm ships with it), then rerun setup.
+- **`pnpm` missing:** enable Corepack with `corepack enable`, or install a compatible `pnpm`, then rerun setup. Profile plugin installation always needs pnpm.
+- **Native addon failure (`sharp`, `node-pty`):** clear the npm cache for the plugin data prefix and rerun `/dsh:setup`, or use a built checkout via `--harness`.
+- **Do not use `npx` as the long-lived binary** and do not follow npm dist-tags (`latest` of the SDK server is not the CLI's `latest`).
 
 ## Credentials are not ready
 
@@ -23,7 +26,7 @@ Run `/dsh:check` again after changing credentials. The bridge reports where cred
 
 Run `/dsh:setup` again. Setup is idempotent: it repairs the SDK server link and managed profile patch, then verifies the composed profile with `--dump-config`.
 
-If using a custom checkout, pass the same `--harness <path>` again so setup can locate `packages/sdk/server`.
+If using a custom checkout, pass the same `--harness <path>` again so setup can locate `packages/sdk/server`. Otherwise setup repairs the profile from the pinned npm specs.
 
 ## Resume is refused
 
@@ -55,6 +58,6 @@ Before opening a bug report, include:
 - the exact `/dsh:*` command and flags;
 - Node, operating system, plugin, and dsh versions;
 - the run ID and relevant job log excerpt;
-- whether the problem reproduces with the pinned harness commit.
+- whether the problem reproduces with the pinned npm version (`@deepseek-ai/dsh@` the version in [dsh-compat.md](dsh-compat.md)).
 
 Use the repository's bug report form. Security-sensitive logs belong in a private vulnerability report, not a public issue.

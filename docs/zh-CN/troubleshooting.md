@@ -4,14 +4,17 @@
 
 最后同步：2026-08-14。首先运行 `/dsh:check`；该命令只读，并会列出缺失条件和下一步操作。
 
-## 无法找到或构建 DeepSeek Harness
+## 无法找到 DeepSeek Harness
 
-- **没有 `dsh`，也没有源码目录：**运行 `/dsh:setup`，自动克隆已验证提交、构建、生成 wrapper 并保存路径。
-- **已有源码目录：**运行 `/dsh:setup --harness <absolute-path>`。
-- **已有 `DSH_BINARY`，但缺少 `cc` profile：**仍需运行 `/dsh:setup`。setup 会从固定提交的源码检出目录安装已单独发布的 SDK JSON-RPC server（`@deepseek-ai/dsh-sdk-jsonrpc-server`，不在 CLI 依赖闭包里）。
-- **Node 版本错误：**插件命令需要 Node >= 20；构建 DeepSeek Harness 需要 Node >= 22.19。
-- **缺少 `pnpm`：**运行 `corepack enable`，或安装兼容版本的 `pnpm` 后重试。
-- **固定提交检出失败：**setup 会停止，不会在未验证分支上继续。处理 Git 错误后重试，不要在发布安装中绕过固定提交。
+- **没有 `dsh`：**运行 `/dsh:setup`。它会把 `@deepseek-ai/dsh@<pin>` 从 npm 装进插件数据目录，生成 wrapper，并创建 `cc` profile。
+- **已有已构建的源码目录：**运行 `/dsh:setup --harness <absolute-path>`。目录必须已经执行过 `pnpm install && pnpm run build:lib`；插件不会代为编译。之后再跑无参数的 `/dsh:setup` 会把已持久化的源码安装迁移到 npm pin。
+- **已有 `DSH_BINARY`，但 `cc` profile 缺失或过期：**仍需运行 `/dsh:setup`。即使 `--dump-config` 里已有包名，也会把 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` 及其已发布的 peers 装进 profile（用 `sdkProfileVersion` 跟踪：`npm:<pin>` 或 `harness:<realpath>`）。
+- **`/dsh:check` 报告 npm pin 或 cc profile 过期：**持久化的 CLI 版本或 profile 身份与当前插件 pin（或当前 `--harness` 检出）不一致。重新运行 `/dsh:setup`（要保留源码目录请再次传入 `--harness`）。
+- **Node 版本错误：**插件命令需要 Node >= 20；运行 DeepSeek Harness 需要 Node >= 22.19。
+- **缺少 `npm`：**安装 Node（自带 npm）后重试。
+- **缺少 `pnpm`：**运行 `corepack enable`，或安装兼容版本的 `pnpm` 后重试。profile 插件安装始终需要 pnpm。
+- **原生插件编译失败（`sharp`、`node-pty`）：**清理插件数据目录对应的 npm 缓存后重跑 `/dsh:setup`，或改用 `--harness` 指向已构建的源码目录。
+- **不要把 `npx` 当作长期 binary**，也不要跟随 npm dist-tag（SDK server 的 `latest` 与 CLI 的 `latest` 不是同一版本）。
 
 ## 凭据未就绪
 
@@ -23,7 +26,7 @@
 
 再次运行 `/dsh:setup`。setup 是幂等的，会修复 SDK server 链接和受管 profile 配置，并通过 `--dump-config` 验证。
 
-如果使用自定义源码目录，请再次传入相同的 `--harness <path>`。
+如果使用自定义源码目录，请再次传入相同的 `--harness <path>`，以便定位 `packages/sdk/server`。否则 setup 会用固定版本的 npm spec 修复 profile。
 
 ## 无法恢复会话
 
@@ -45,6 +48,6 @@
 
 ## 提交问题前
 
-请准备 `/dsh:check` 输出（移除敏感信息）、完整命令和参数、Node/操作系统/插件/dsh 版本、run ID、相关日志片段，以及是否能在固定 Harness 提交上复现。
+请准备 `/dsh:check` 输出（移除敏感信息）、完整命令和参数、Node/操作系统/插件/dsh 版本、run ID、相关日志片段，以及是否能在 [dsh-compat.md](../dsh-compat.md) 固定的 npm 版本上复现。
 
 普通问题使用仓库的 Bug 表单；包含安全敏感信息的日志必须通过私有漏洞报告提交。
