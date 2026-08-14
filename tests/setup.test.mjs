@@ -475,8 +475,36 @@ test("check reports a stale npm pin and profile identity as not ready", (t) => {
   assert.equal(report.npm.version, "0.1.0-rc.5");
   assert.equal(report.profile.ready, false);
   assert.equal(report.multiTurnReady, false);
+  // The stale pin is the CLI one-shot runs will use, so the headline cannot
+  // stay "ready" while the npm row is not.
+  assert.equal(report.dsh.source, "npm-pin");
+  assert.equal(report.ready, false);
   assert.ok(report.nextSteps.some((step) => step.includes("0.1.0-rc.5") && step.includes(HARNESS_NPM_VERSION)));
   assert.ok(report.nextSteps.some((step) => step.includes("cc profile plugins")));
+});
+
+test("a stale npm row does not unready a dsh the user supplied instead", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-check-stale-env-");
+
+  const setup = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const configPath = path.join(dataDir, "config.json");
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.npmVersion = "0.1.0-rc.5";
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  // DSH_BINARY is what runs now; the old npm prefix says nothing about it.
+  const extEnv = { ...env, DSH_BINARY: writeExternalDsh() };
+  const report = JSON.parse(runBridge(["check", "--json", "--cwd", workspace], extEnv, workspace).stdout);
+  assert.equal(report.dsh.source, "env");
+  assert.equal(report.npm.ok, false);
+  assert.equal(report.ready, true);
 });
 
 test("setup reinstalls the npm pin when the persisted version is stale", (t) => {
@@ -669,5 +697,40 @@ test("setup reinstalls the npm pin when the prefix lost its CLI, even with dsh o
   assert.equal(report.npm.ok, true);
   assert.equal(report.dsh.source, "npm-pin");
   assert.equal(report.multiTurnReady, true);
+  assert.deepEqual(report.nextSteps, []);
+});
+
+test("setup rewrites a deleted wrapper without reinstalling the intact pin", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, dshHome, fakeBinDir, templatePath, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-wrapper-repair-");
+
+  const first = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(first.status, 0, first.stderr);
+  const addsAfterFirst = pluginAddCount(dshHome);
+
+  // Only the wrapper is cleaned; the pinned package survives and an
+  // unrelated dsh answers on PATH, so nothing else looks broken.
+  fs.rmSync(path.join(dataDir, "bin"), { recursive: true, force: true });
+  fs.writeFileSync(path.join(fakeBinDir, "dsh"), `#!/bin/sh\nexec "${process.execPath}" "${templatePath}" "$@"\n`, {
+    mode: 0o755
+  });
+
+  const stale = JSON.parse(runBridge(["check", "--json", "--cwd", workspace], env, workspace).stdout);
+  assert.equal(stale.npm.ok, false);
+  assert.ok(stale.nextSteps.some((step) => step.includes("no longer exists")));
+
+  const repair = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(repair.status, 0, repair.stderr);
+  const report = JSON.parse(repair.stdout);
+  assert.ok(report.actionsTaken.some((line) => line.startsWith("Rewrote the managed dsh wrapper")));
+  assert.ok(!report.actionsTaken.some((line) => line.includes(`Installed ${HARNESS_CLI_PACKAGE}@`)));
+  assert.equal(pluginAddCount(dshHome), addsAfterFirst, "an intact profile must not be re-added");
+  assert.equal(report.npm.ok, true);
+  assert.equal(report.dsh.source, "npm-pin");
+  assert.equal(report.ready, true);
   assert.deepEqual(report.nextSteps, []);
 });

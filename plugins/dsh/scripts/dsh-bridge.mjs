@@ -244,6 +244,7 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     };
   }
   const npm = describeNpmInstall(pluginConfig);
+  const managedNpmStale = binaryInfo.source === "npm-pin" && Boolean(npm) && !npm.ok;
   const expectedProfileIdentity = expectedSdkProfileIdentity(pluginConfig, binaryInfo.source);
   const actualProfileIdentity = pluginConfig.sdkProfileVersion ?? null;
   if (dshStatus.available && profileStatus.ready && actualProfileIdentity !== expectedProfileIdentity) {
@@ -294,7 +295,12 @@ async function buildCheckReport(cwd, actionsTaken = []) {
   }
 
   return {
-    ready: nodeStatus.available && dshStatus.available && authStatus.ok,
+    // A managed npm install off the verified pin makes the one-shot path
+    // unsupported, not merely outdated: it is the CLI those commands run,
+    // and DSH promises no compatibility between preview versions. The same
+    // row describing an install the user overrode (DSH_BINARY / PATH) says
+    // nothing about what will run, so readiness keys on the resolved source.
+    ready: nodeStatus.available && dshStatus.available && authStatus.ok && !managedNpmStale,
     multiTurnReady: profileStatus.ready,
     node: nodeStatus,
     dsh: dshStatus,
@@ -413,30 +419,34 @@ function expectedSdkProfileIdentity(config, binarySource) {
 /**
  * Health of the persisted npm CLI install, or null when setup never wrote
  * one. `ok` is the single definition of "the pinned CLI is in place": check
- * reports it and handleSetup reinstalls on it, so a prefix that lost its
- * bin.js cannot look healthy to one and broken to the other.
+ * reports it and handleSetup repairs on it, so a damaged install cannot look
+ * healthy to one and broken to the other. The two halves are separate
+ * because they need different repairs — `cliOk` (the pinned package) takes a
+ * reinstall, `wrapperOk` (the shim dsh resolution goes through) only takes a
+ * rewrite.
  */
 function describeNpmInstall(config) {
   if (config.dshInstall !== "npm") {
     return null;
   }
   const prefix = config.npmPrefix ?? null;
+  const version = config.npmVersion ?? null;
   const binPath = prefix ? resolveNpmCliBin(prefix) : null;
   const binOk = Boolean(binPath) && fs.existsSync(binPath);
-  const pinMatches = config.npmVersion === HARNESS_NPM_VERSION;
-  const version = config.npmVersion ?? null;
-  return {
-    ok: binOk && pinMatches,
-    prefix,
-    version,
-    detail: !prefix
-      ? `${HARNESS_CLI_PACKAGE} is recorded as an npm install with no prefix`
-      : !binOk
-        ? `${prefix} is missing ${binPath}`
-        : !pinMatches
-          ? `${prefix} (${HARNESS_CLI_PACKAGE}@${version ?? "unknown"}; plugin pin is ${HARNESS_NPM_VERSION})`
-          : `${prefix} (${HARNESS_CLI_PACKAGE}@${version})`
-  };
+  const cliOk = binOk && version === HARNESS_NPM_VERSION;
+  const wrapper = config.dshBinary ?? null;
+  const wrapperOk = Boolean(wrapper) && fs.existsSync(wrapper);
+  let detail = `${prefix} (${HARNESS_CLI_PACKAGE}@${version})`;
+  if (!prefix) {
+    detail = `${HARNESS_CLI_PACKAGE} is recorded as an npm install with no prefix`;
+  } else if (!binOk) {
+    detail = `${prefix} is missing ${binPath}`;
+  } else if (!cliOk) {
+    detail = `${prefix} (${HARNESS_CLI_PACKAGE}@${version ?? "unknown"}; plugin pin is ${HARNESS_NPM_VERSION})`;
+  } else if (!wrapperOk) {
+    detail = `${prefix} (${HARNESS_CLI_PACKAGE}@${version}); the managed wrapper ${wrapper ?? "(unset)"} is missing`;
+  }
+  return { ok: cliOk && wrapperOk, cliOk, wrapperOk, prefix, version, detail };
 }
 
 /** True when persisted config is a source checkout, including pre-npm-pin installs. */
@@ -502,7 +512,14 @@ async function handleSetup(argv) {
     // machine on the old source install, and only an explicit --harness this
     // run retains a checkout.
     const npmInstall = describeNpmInstall(config);
-    if (!dshAvailable || (npmInstall && !npmInstall.ok) || isLegacySourceInstall(config)) {
+    if (npmInstall?.cliOk && !npmInstall.wrapperOk) {
+      // Only the shim is gone. Rewriting it converges without a reinstall —
+      // and without a network — while the pinned package stays untouched, so
+      // the cc profile keeps its identity and needs no re-add.
+      const wrapper = writeDshWrapper(resolveNpmCliBin(npmInstall.prefix), requireHarnessNode().command);
+      writePluginConfig({ dshBinary: wrapper });
+      actionsTaken.push(`Rewrote the managed dsh wrapper at ${wrapper} (${HARNESS_CLI_PACKAGE}@${npmInstall.version} was intact).`);
+    } else if (!dshAvailable || (npmInstall && !npmInstall.ok) || isLegacySourceInstall(config)) {
       const harnessNode = requireHarnessNode();
       const prefix = resolveNpmInstallDir();
       const binPath = installPinnedDshFromNpm(prefix, { actionsTaken });

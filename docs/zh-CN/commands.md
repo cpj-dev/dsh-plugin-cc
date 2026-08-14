@@ -8,7 +8,7 @@
 
 ## `/dsh:check` → `check`
 
-只读检查以下内容：Node、`dsh` 可执行文件（解析顺序为 `DSH_BINARY` → `/dsh:setup` 保存的配置 → PATH；来源为 `env` / `npm-pin` / `harness` / `config` / `path`）、可选的 npm prefix 或源码目录状态、Harness Node 最低版本（>= 22.19）、凭据、`cc` profile 和 broker。持久化的 CLI pin 与 `HARNESS_NPM_VERSION` 不一致时 npm 行不算就绪；`sdkProfileVersion` 与当前安装身份（`npm:<pin>` 或 `harness:<realpath>`）不一致时 profile 不算就绪。`ready` 表示一次性运行可用；`multiTurnReady` 表示 `--session`、`--resume` 和 `import` 可用。该命令不会安装任何内容。
+只读检查以下内容：Node、`dsh` 可执行文件（解析顺序为 `DSH_BINARY` → `/dsh:setup` 保存的配置 → PATH；来源为 `env` / `npm-pin` / `harness` / `config` / `path`）、可选的 npm prefix 或源码目录状态、Harness Node 最低版本（>= 22.19）、凭据、`cc` profile 和 broker。持久化的 CLI pin 与 `HARNESS_NPM_VERSION` 不一致、prefix 缺少 `bin.js`，或托管 wrapper 丢失时，npm 行不算就绪；`sdkProfileVersion` 与当前安装身份（`npm:<pin>` 或 `harness:<realpath>`）不一致时 profile 不算就绪。`ready` 表示一次性运行可用——当不就绪的 npm 行描述的正是当前解析到的可执行文件（来源为 `npm-pin`）时，`ready` 为 false，因为一次性命令跑的就是那个 CLI；通过 `DSH_BINARY` 或 PATH 提供的 dsh 由用户自己负责，不按 pin 判定。`multiTurnReady` 表示 `--session`、`--resume` 和 `import` 可用。该命令不会安装任何内容。
 
 ## `/dsh:setup` → `setup`
 
