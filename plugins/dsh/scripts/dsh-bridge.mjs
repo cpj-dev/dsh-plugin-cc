@@ -223,7 +223,7 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     dshStatus.detail = `${dshStatus.detail} (via ${DSH_SOURCE_LABEL[binaryInfo.source] ?? binaryInfo.source})`;
   }
   const authStatus = dshStatus.available ? getDshAuthStatus(cwd) : { ok: false, detail: "dsh unavailable; skipped" };
-  const profileStatus = dshStatus.available
+  let profileStatus = dshStatus.available
     ? probeProfile("cc", { mustContain: JSONRPC_PLUGIN, cwd })
     : { ready: false, detail: "dsh unavailable; skipped" };
   const brokerStatus = await getBrokerStatus(resolveWorkspaceRoot(cwd));
@@ -246,14 +246,25 @@ async function buildCheckReport(cwd, actionsTaken = []) {
   let npm = null;
   if (pluginConfig.dshInstall === "npm" && pluginConfig.npmPrefix) {
     const binPath = resolveNpmCliBin(pluginConfig.npmPrefix);
-    const ok = fs.existsSync(binPath);
+    const binOk = fs.existsSync(binPath);
+    const pinMatches = pluginConfig.npmVersion === HARNESS_NPM_VERSION;
     npm = {
-      ok,
+      ok: binOk && pinMatches,
       prefix: pluginConfig.npmPrefix,
       version: pluginConfig.npmVersion ?? null,
-      detail: ok
-        ? `${pluginConfig.npmPrefix} (${HARNESS_CLI_PACKAGE}@${pluginConfig.npmVersion ?? "unknown"})`
-        : `${pluginConfig.npmPrefix} is missing ${binPath}`
+      detail: !binOk
+        ? `${pluginConfig.npmPrefix} is missing ${binPath}`
+        : !pinMatches
+          ? `${pluginConfig.npmPrefix} (${HARNESS_CLI_PACKAGE}@${pluginConfig.npmVersion ?? "unknown"}; plugin pin is ${HARNESS_NPM_VERSION})`
+          : `${pluginConfig.npmPrefix} (${HARNESS_CLI_PACKAGE}@${pluginConfig.npmVersion})`
+    };
+  }
+  const expectedProfileIdentity = expectedSdkProfileIdentity(pluginConfig);
+  const actualProfileIdentity = pluginConfig.sdkProfileVersion ?? null;
+  if (dshStatus.available && profileStatus.ready && actualProfileIdentity !== expectedProfileIdentity) {
+    profileStatus = {
+      ready: false,
+      detail: `cc profile plugins are ${actualProfileIdentity ?? "unpinned"} (want ${expectedProfileIdentity})`
     };
   }
   const harnessNode = selectHarnessNode();
@@ -270,7 +281,11 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     );
   }
   if (npm && !npm.ok) {
-    nextSteps.push(`The configured npm install is not runnable (${npm.detail}). Rerun /dsh:setup.`);
+    nextSteps.push(
+      npm.version && npm.version !== HARNESS_NPM_VERSION
+        ? `The configured npm pin is ${npm.version} (plugin pin is ${HARNESS_NPM_VERSION}). Rerun /dsh:setup.`
+        : `The configured npm install is not runnable (${npm.detail}). Rerun /dsh:setup.`
+    );
   }
   if (harness && !harness.ok) {
     nextSteps.push(
@@ -286,7 +301,11 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     nextSteps.push("Provide DEEPSEEK_API_KEY (env, $DSH_HOME/.credentials.yaml, or .env).");
   }
   if (dshStatus.available && !profileStatus.ready) {
-    nextSteps.push("Run /dsh:setup to create the multi-turn `cc` profile (one-shot review/delegate works without it).");
+    nextSteps.push(
+      actualProfileIdentity !== expectedProfileIdentity
+        ? `Rerun /dsh:setup to refresh the cc profile plugins (${profileStatus.detail}).`
+        : "Run /dsh:setup to create the multi-turn `cc` profile (one-shot review/delegate works without it)."
+    );
   }
 
   return {
@@ -353,8 +372,11 @@ function linkBuiltHarnessCheckout(checkoutRoot, { actionsTaken, harnessNode }) {
     dshInstall: "harness",
     harnessCheckout: inspection.root,
     npmPrefix: null,
-    npmVersion: null,
-    sdkProfileVersion: null
+    npmVersion: null
+    // Do not clear sdkProfileVersion here: a same-checkout rerun must stay
+    // idempotent. npm→harness and checkout A→B are detected by comparing
+    // the stored identity (`npm:<pin>` / `harness:<realpath>`) with the
+    // identity this run will write after a successful plugin add.
   });
   actionsTaken.push(
     `Linked dsh to the source checkout at ${inspection.root} (${inspection.version ?? "unknown version"}${inspection.commit ? ` @ ${inspection.commit}` : ""}; wrapper at ${wrapper}, node ${harnessNode.version}).`
@@ -369,6 +391,32 @@ function resolveSdkServerDir(checkoutRoot) {
     throw new Error(`No SDK server package at ${dir}; is ${checkoutRoot} a complete DeepSeek Harness checkout?`);
   }
   return dir;
+}
+
+function npmSdkProfileIdentity() {
+  return `npm:${HARNESS_NPM_VERSION}`;
+}
+
+function harnessSdkProfileIdentity(checkoutRoot) {
+  const resolved = path.resolve(String(checkoutRoot));
+  try {
+    return `harness:${fs.realpathSync(resolved)}`;
+  } catch {
+    return `harness:${resolved}`;
+  }
+}
+
+/** Identity written to sdkProfileVersion after a successful plugin add. */
+function sdkProfileIdentityForSetup(checkoutRoot) {
+  return checkoutRoot ? harnessSdkProfileIdentity(checkoutRoot) : npmSdkProfileIdentity();
+}
+
+/** Identity check expects for the persisted install source. */
+function expectedSdkProfileIdentity(config) {
+  if (config.dshInstall === "harness" && config.harnessCheckout) {
+    return harnessSdkProfileIdentity(config.harnessCheckout);
+  }
+  return npmSdkProfileIdentity();
 }
 
 /** True when persisted config is a source checkout, including pre-npm-pin installs. */
@@ -394,8 +442,9 @@ function persistNpmCli(prefix, binPath, harnessNode, actionsTaken) {
     npmPrefix: prefix,
     npmVersion: HARNESS_NPM_VERSION,
     harnessCheckout: null,
-    // Cleared until plugin add succeeds — dump-config matching the package
-    // name must not skip a retry after a failed refresh.
+    // Cleared until plugin add succeeds — a CLI pin refresh must re-add
+    // even when the stored identity already names the current pin, and a
+    // failed add must retry even if dump-config already names the package.
     sdkProfileVersion: null
   });
   actionsTaken.push(
@@ -448,14 +497,15 @@ async function handleSetup(argv) {
   //    `--harness` link:-installs the checkout's SDK server (missing
   //    packages/sdk/server is an error, not a silent registry fallback).
   //    The default path adds the pinned npm package plus its published
-  //    peerDependencies. sdkProfileVersion is written only after add
-  //    succeeds, so a pin bump or a failed add is retried even when
-  //    dump-config already names the package.
+  //    peerDependencies. sdkProfileVersion is a full identity
+  //    (`npm:<pin>` or `harness:<realpath>`) written only after add
+  //    succeeds, so pin bumps, npm↔harness switches, checkout A→B, and
+  //    failed adds are retried even when dump-config already names the package.
   const probeBefore = probeProfile("cc", { mustContain: JSONRPC_PLUGIN, cwd });
-  const usingCheckout = Boolean(checkoutRoot);
-  const profilePinStale = !usingCheckout && readPluginConfig().sdkProfileVersion !== HARNESS_NPM_VERSION;
-  if (!probeBefore.ready || profilePinStale) {
-    const specs = usingCheckout ? [resolveSdkServerDir(checkoutRoot)] : pinnedSdkServerInstallSpecs();
+  const expectedIdentity = sdkProfileIdentityForSetup(checkoutRoot);
+  const profileIdentityStale = readPluginConfig().sdkProfileVersion !== expectedIdentity;
+  if (!probeBefore.ready || profileIdentityStale) {
+    const specs = checkoutRoot ? [resolveSdkServerDir(checkoutRoot)] : pinnedSdkServerInstallSpecs();
     const pnpmStatus = binaryAvailable("pnpm", ["--version"], { cwd });
     if (!pnpmStatus.available) {
       throw new Error("Profile setup needs pnpm on PATH (dsh plugin forwards to pnpm). Install pnpm (`corepack enable`) and rerun /dsh:setup.");
@@ -465,7 +515,7 @@ async function handleSetup(argv) {
     if (install.status !== 0) {
       throw new Error(`dsh plugin --profile cc add ${specs.join(" ")} failed:\n${(install.stderr || install.stdout).trim().slice(0, 800)}`);
     }
-    writePluginConfig({ sdkProfileVersion: usingCheckout ? null : HARNESS_NPM_VERSION });
+    writePluginConfig({ sdkProfileVersion: expectedIdentity });
     actionsTaken.push(
       probeBefore.ready
         ? `Refreshed ${JSONRPC_PLUGIN} in the cc profile from ${specs.join(" ")}.`

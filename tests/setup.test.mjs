@@ -20,6 +20,11 @@ import { withEnv } from "./helpers.mjs";
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE = path.join(TESTS_DIR, "..", "plugins/dsh/scripts/dsh-bridge.mjs");
+const NPM_PROFILE_IDENTITY = `npm:${HARNESS_NPM_VERSION}`;
+
+function harnessProfileIdentity(checkout) {
+  return `harness:${fs.realpathSync(checkout)}`;
+}
 
 // The harness (and therefore setup) needs Node >= 22.19; on older CI legs
 // these end-to-end tests are skipped, the unit layers still run.
@@ -204,7 +209,7 @@ test("setup with no args installs the pinned npm CLI and registry SDK specs", (t
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
   assert.equal(config.dshInstall, "npm");
   assert.equal(config.npmVersion, HARNESS_NPM_VERSION);
-  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
   assert.equal(config.npmPrefix, path.join(dataDir, "npm"));
   assert.equal(config.harnessCheckout, undefined);
   assert.ok(fs.existsSync(config.dshBinary));
@@ -248,6 +253,7 @@ test("setup --harness on a built checkout links dsh and installs the SDK server 
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
   assert.equal(config.dshInstall, "harness");
   assert.equal(config.harnessCheckout, checkout);
+  assert.equal(config.sdkProfileVersion, harnessProfileIdentity(checkout));
   assert.ok(fs.existsSync(config.dshBinary));
   assert.match(fs.readFileSync(config.dshBinary, "utf8"), /apps\/cli\/lib\/bin\.js/);
 
@@ -271,7 +277,94 @@ test("setup --harness on a built checkout links dsh and installs the SDK server 
   const migratedConfig = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
   assert.equal(migratedConfig.dshInstall, "npm");
   assert.equal(migratedConfig.harnessCheckout, undefined);
+  assert.equal(migratedConfig.sdkProfileVersion, NPM_PROFILE_IDENTITY);
   assert.equal(pluginAddCount(dshHome), 2);
+});
+
+test("setup switches the cc profile when moving from npm to --harness", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, dshHome, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-npm-to-harness-");
+  const checkout = writeFakeCheckout(makeTempDir("checkout-from-npm-"));
+
+  const npmSetup = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(npmSetup.status, 0, npmSetup.stderr);
+  assert.equal(pluginAddCount(dshHome), 1);
+  const afterNpm = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(afterNpm.sdkProfileVersion, NPM_PROFILE_IDENTITY);
+
+  const harnessSetup = runBridge(["setup", "--harness", checkout, "--json", "--cwd", workspace], env, workspace);
+  assert.equal(harnessSetup.status, 0, harnessSetup.stderr);
+  const report = JSON.parse(harnessSetup.stdout);
+  assert.ok(report.actionsTaken.some((line) => line.includes("Linked dsh to the source checkout")));
+  assert.ok(report.actionsTaken.some((line) => line.includes(HARNESS_SDK_JSONRPC_PACKAGE) || line.includes("packages/sdk/server")));
+  assert.equal(pluginAddCount(dshHome), 2, "npm → --harness must re-add the checkout SDK server, not keep npm registry specs");
+
+  const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
+  assert.deepEqual(JSON.parse(addLog[0]), ["plugin", "--profile", "cc", "add", ...pinnedSdkServerInstallSpecs()]);
+  assert.deepEqual(JSON.parse(addLog[1]), ["plugin", "--profile", "cc", "add", path.join(checkout, "packages", "sdk", "server")]);
+
+  const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(config.dshInstall, "harness");
+  assert.equal(config.sdkProfileVersion, harnessProfileIdentity(checkout));
+
+  const rerun = runBridge(["setup", "--harness", checkout, "--json", "--cwd", workspace], env, workspace);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(pluginAddCount(dshHome), 2, "same-checkout --harness must stay idempotent after the switch");
+});
+
+test("setup switches the cc profile when moving from checkout A to checkout B", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, dshHome, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-checkout-switch-");
+  const checkoutA = writeFakeCheckout(makeTempDir("checkout-a-"));
+  const checkoutB = writeFakeCheckout(makeTempDir("checkout-b-"));
+
+  const first = runBridge(["setup", "--harness", checkoutA, "--cwd", workspace], env, workspace);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(pluginAddCount(dshHome), 1);
+  const afterA = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(afterA.sdkProfileVersion, harnessProfileIdentity(checkoutA));
+
+  const second = runBridge(["setup", "--harness", checkoutB, "--json", "--cwd", workspace], env, workspace);
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(pluginAddCount(dshHome), 2, "checkout A → B must re-add B's SDK server");
+  const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
+  assert.deepEqual(JSON.parse(addLog[1]), ["plugin", "--profile", "cc", "add", path.join(checkoutB, "packages", "sdk", "server")]);
+
+  const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(config.harnessCheckout, checkoutB);
+  assert.equal(config.sdkProfileVersion, harnessProfileIdentity(checkoutB));
+});
+
+test("setup retries --harness profile plugin add after a failed checkout link", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, dshHome, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-harness-retry-");
+  const checkout = writeFakeCheckout(makeTempDir("checkout-retry-"));
+
+  const failed = runBridge(["setup", "--harness", checkout, "--cwd", workspace], { ...env, DSH_FAIL_PLUGIN_ADD: "1" }, workspace);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /simulated plugin add failure/);
+  const afterFail = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(afterFail.dshInstall, "harness");
+  assert.equal(afterFail.sdkProfileVersion, undefined, "identity must be written only after a successful plugin add");
+  assert.equal(pluginAddCount(dshHome), 1);
+
+  const retry = runBridge(["setup", "--harness", checkout, "--json", "--cwd", workspace], env, workspace);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(pluginAddCount(dshHome), 2);
+  const afterRetry = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+  assert.equal(afterRetry.sdkProfileVersion, harnessProfileIdentity(checkout));
 });
 
 test("setup --harness rejects non-checkouts and unbuilt trees without compiling them", (t) => {
@@ -320,7 +413,7 @@ test("plain setup with an external dsh adds the SDK server from npm specs", (t) 
   assert.ok(!report.actionsTaken.some((line) => line.includes("Installed @deepseek-ai/dsh@")));
   assert.ok(!fs.existsSync(path.join(dataDir, "npm")), "external dsh must not trigger an npm prefix install");
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
-  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
   assert.notEqual(config.dshInstall, "npm");
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim()), [
     "plugin",
@@ -355,6 +448,34 @@ test("check reports the configured npm pin and flags a vanished binary", (t) => 
   assert.ok(degradedReport.nextSteps.some((step) => step.includes("no longer exists")));
 });
 
+test("check reports a stale npm pin and profile identity as not ready", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-check-stale-");
+
+  const setup = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const configPath = path.join(dataDir, "config.json");
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.npmVersion = "0.1.0-rc.5";
+  config.sdkProfileVersion = "0.1.0-rc.5";
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  const check = runBridge(["check", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(check.status, 0, check.stderr);
+  const report = JSON.parse(check.stdout);
+  assert.equal(report.npm.ok, false);
+  assert.equal(report.npm.version, "0.1.0-rc.5");
+  assert.equal(report.profile.ready, false);
+  assert.equal(report.multiTurnReady, false);
+  assert.ok(report.nextSteps.some((step) => step.includes("0.1.0-rc.5") && step.includes(HARNESS_NPM_VERSION)));
+  assert.ok(report.nextSteps.some((step) => step.includes("cc profile plugins")));
+});
+
 test("setup reinstalls the npm pin when the persisted version is stale", (t) => {
   if (!HARNESS_NODE_OK) {
     t.skip("needs Node >= 22.19 to run the harness");
@@ -380,7 +501,7 @@ test("setup reinstalls the npm pin when the persisted version is stale", (t) => 
   const next = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(next.npmVersion, HARNESS_NPM_VERSION);
   assert.equal(next.dshInstall, "npm");
-  assert.equal(next.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.equal(next.sdkProfileVersion, NPM_PROFILE_IDENTITY);
 
   const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
   assert.equal(addLog.length, 2, "pin refresh must re-add SDK server + peers, not skip because dump-config already names the package");
@@ -419,7 +540,7 @@ test("plain setup migrates a pre-npm source config to the npm pin", (t) => {
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
   assert.equal(config.dshInstall, "npm");
   assert.equal(config.harnessCheckout, undefined);
-  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
   assert.match(fs.readFileSync(config.dshBinary, "utf8"), /@deepseek-ai\/dsh\/lib\/bin\.js/);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim()), [
     "plugin",
@@ -461,7 +582,7 @@ test("setup retries profile plugin add after a failed pin refresh", (t) => {
   assert.ok(report.actionsTaken.some((line) => line.includes(HARNESS_SDK_JSONRPC_PACKAGE)));
   assert.equal(pluginAddCount(dshHome), 3);
   const afterRetry = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  assert.equal(afterRetry.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.equal(afterRetry.sdkProfileVersion, NPM_PROFILE_IDENTITY);
 });
 
 test("external dsh with a ready profile still refreshes pinned SDK specs", (t) => {
@@ -485,6 +606,6 @@ test("external dsh with a ready profile still refreshes pinned SDK specs", (t) =
   assert.ok(!fs.existsSync(path.join(dataDir, "npm")));
   assert.equal(pluginAddCount(dshHome), 1);
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
-  assert.equal(config.sdkProfileVersion, HARNESS_NPM_VERSION);
+  assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
   assert.notEqual(config.dshInstall, "npm");
 });

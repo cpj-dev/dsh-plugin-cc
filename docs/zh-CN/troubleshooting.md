@@ -8,7 +8,8 @@
 
 - **没有 `dsh`：**运行 `/dsh:setup`。它会把 `@deepseek-ai/dsh@<pin>` 从 npm 装进插件数据目录，生成 wrapper，并创建 `cc` profile。
 - **已有已构建的源码目录：**运行 `/dsh:setup --harness <absolute-path>`。目录必须已经执行过 `pnpm install && pnpm run build:lib`；插件不会代为编译。之后再跑无参数的 `/dsh:setup` 会把已持久化的源码安装迁移到 npm pin。
-- **已有 `DSH_BINARY`，但 `cc` profile 缺失或过期：**仍需运行 `/dsh:setup`。即使 `--dump-config` 里已有包名，也会把 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` 及其已发布的 peers 装进 profile（用 `sdkProfileVersion` 跟踪）。
+- **已有 `DSH_BINARY`，但 `cc` profile 缺失或过期：**仍需运行 `/dsh:setup`。即使 `--dump-config` 里已有包名，也会把 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` 及其已发布的 peers 装进 profile（用 `sdkProfileVersion` 跟踪：`npm:<pin>` 或 `harness:<realpath>`）。
+- **`/dsh:check` 报告 npm pin 或 cc profile 过期：**持久化的 CLI 版本或 profile 身份与当前插件 pin（或当前 `--harness` 检出）不一致。重新运行 `/dsh:setup`（要保留源码目录请再次传入 `--harness`）。
 - **Node 版本错误：**插件命令需要 Node >= 20；运行 DeepSeek Harness 需要 Node >= 22.19。
 - **缺少 `npm`：**安装 Node（自带 npm）后重试。
 - **缺少 `pnpm`：**运行 `corepack enable`，或安装兼容版本的 `pnpm` 后重试。profile 插件安装始终需要 pnpm。

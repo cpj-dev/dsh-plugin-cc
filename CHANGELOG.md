@@ -21,7 +21,9 @@
 
 - `npm test` no longer quotes the `tests/*.test.mjs` glob. Node 20's test runner does not expand globs, so CI on the Node 20 matrix looked for a literal filename and failed even though the suite exists.
 - Plain `/dsh:setup` repairs the `cc` profile when dsh is already available via `DSH_BINARY` or PATH: the CLI install is skipped, and the SDK JSON-RPC server is added from the pinned npm specs plus peers (no checkout required).
-- `/dsh:setup` re-adds the pinned SDK JSON-RPC server and peers when it refreshes a stale npm CLI pin. `--dump-config` only proves the package *name* is present, so a pin bump would otherwise leave the profile on the previous SDK-server/peer versions. The profile pin is stored as `sdkProfileVersion` and is written only after a successful `plugin add`, so a failed refresh is retried.
+- `/dsh:setup` re-adds the pinned SDK JSON-RPC server and peers when it refreshes a stale npm CLI pin. `--dump-config` only proves the package *name* is present, so a pin bump would otherwise leave the profile on the previous SDK-server/peer versions. The profile pin is stored as `sdkProfileVersion` (`npm:<pin>` or `harness:<realpath>`) and is written only after a successful `plugin add`, so a failed refresh is retried.
+- Switching from the npm CLI to `--harness`, or from checkout A to B, re-adds the SDK server for the new source instead of keeping the previous profile plugins.
+- `/dsh:check` treats a stale npm CLI pin or profile identity as not ready and adds `nextSteps` to rerun setup.
 - No-args `/dsh:setup` migrates a persisted source install (pre-npm `harnessCheckout`, or `dshInstall: harness`) to the npm pin. Only an explicit `--harness` this run keeps a checkout.
 - `--harness` errors when `packages/sdk/server` is missing instead of silently adding the npm SDK-server pin beside a custom CLI.
 
