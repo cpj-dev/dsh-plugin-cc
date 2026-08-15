@@ -8,7 +8,7 @@
 
 ## Agent 模式
 
-dsh 在 **minimal** 模式下整体能力表现更好，因此插件默认使用它：固定的一句话 persona，且只保留两个工具（bash + `str_replace_editor`），通过生成的 `--patch` 覆盖层禁用 dsh-base 组合中的其余部分。**standard** 是未修改的完整工具集（文件检索、网页搜索、skills、子代理、plan/goal 工具），随时可切换。解析顺序：每次运行的 `--mode minimal|standard` > 环境变量 `DSH_CC_MODE` > `/dsh:setup --mode <m>` 持久化的机器默认 > 内置 `minimal`。一次性运行按次选模式；broker（`--session`/`--resume`/`import`）在进程启动时组合模式并保持不变——请求解析出的模式与活 broker 不一致时会报错并提示 `/dsh:stop --broker`（停止会丢弃内存中的会话）。插件的 minimal 有意保留沙箱文件系统栈（`DSH_PERMISSION_MODE` 仍是安全边界）、一次性 bash 和上下文压缩。继承的 `DSH_TOOLS_MODE` 会从每次 dsh spawn 的环境中剥除——模式的所有权归 `--mode`。
+dsh 在 **minimal** 模式下整体能力表现更好，因此插件默认使用它：固定的一句话 persona，且只保留两个工具（bash + `str_replace_editor`），通过生成的 `--patch` 覆盖层禁用 dsh-base 组合中的其余部分。**standard** 是未修改的完整工具集（文件检索、网页搜索、skills、子代理、plan/goal 工具），随时可切换。解析顺序：每次运行的 `--mode minimal|standard` > 环境变量 `DSH_CC_MODE` > `/dsh:setup --mode <m>` 持久化的机器默认 > 内置 `minimal`。一次性运行按次选模式；broker（`--session`/`--resume`/`import`）在进程启动时组合模式并保持不变——请求解析出的模式与活 broker 不一致时会报错并提示 `/dsh:stop --broker`（停止会丢弃内存中的会话）。插件的 minimal 有意保留沙箱文件系统栈（`DSH_PERMISSION_MODE` 仍是安全边界）、一次性 bash 和上下文压缩；bash 的 `run_in_background` 参数也一并移除——收取后台任务的 job 工具已随工具集禁用。继承的 `DSH_TOOLS_MODE` 会从每次 dsh spawn 的环境中剥除——模式的所有权归 `--mode`。组合的模式事后可观测：run/review/critique 的 JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组合的模式，而非请求值），渲染的任务 footer 把两个正交事实分开标注——`agent mode: minimal · sandbox: read-only`。
 
 ## `/dsh:check` → `check`
 

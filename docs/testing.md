@@ -29,7 +29,7 @@ Real model behavior, profile installation, and the broker's live SDK handshake n
 In a scratch git repo with the plugin installed:
 
 1. `/dsh:check` → ready (or accurate next steps when deliberately unconfigured).
-2. `/dsh:review` on a dirty tree → review text; footer shows read-only mode; repo files unmodified.
+2. `/dsh:review` on a dirty tree → review text; repo files unmodified (reviews always run the read-only sandbox).
 3. `/dsh:critique` → parsed findings render (or a graceful "unstructured output" fallback).
 4. `/dsh:run --background "summarize this repo"` → run id immediately; `/dsh:runs` shows running → completed; `/dsh:show` replays the result.
 5. `/dsh:setup` → cc profile composes; rerun is a no-op.

@@ -707,6 +707,7 @@ async function executeReviewRun(request) {
     const payload = {
       review: reviewName,
       target,
+      agentMode: mode,
       context: { repoRoot: context.repoRoot, branch: context.branch, summary: context.summary },
       dsh: { status: result.status, stderr: result.stderr, stdout: result.finalMessage },
       result: parsed.parsed,
@@ -726,6 +727,7 @@ async function executeReviewRun(request) {
   const payload = {
     review: reviewName,
     target,
+    agentMode: mode,
     dsh: { status: result.status, stderr: result.stderr, stdout: result.finalMessage }
   };
   return {
@@ -868,20 +870,29 @@ async function executeTaskRun(request) {
     sessionId = result.sessionId;
     request.onProgress?.({ message: `dsh session ${sessionId} idle.`, phase: "finalizing", dshSessionId: sessionId });
 
-    // The broker keeps the permission mode it started with (documented
-    // limitation) — report THAT, not this request's flag: a resume without
-    // --write still writes when the broker was started workspace-write.
-    const brokerMode = (await getBrokerStatus(workspaceRoot))?.permissionMode ?? (write ? "workspace-write" : "read-only");
+    // The broker keeps the permission mode AND agent mode it started with
+    // (documented limitations) — report THOSE, not this request's flags: a
+    // resume without --write still writes when the broker was started
+    // workspace-write, and its composed mode is what actually answered.
+    const brokerStatus = await getBrokerStatus(workspaceRoot);
+    const brokerMode = brokerStatus?.permissionMode ?? (write ? "workspace-write" : "read-only");
+    const brokerAgentMode = brokerStatus?.mode ?? "standard";
     const effectiveWrite = brokerMode !== "read-only";
     const rendered = renderTaskResult(
       { rawOutput: result.finalResponse ?? "", failureMessage: "" },
-      { title: request.title, jobId: request.jobId ?? null, write: effectiveWrite, dshSessionId: sessionId }
+      { title: request.title, jobId: request.jobId ?? null, write: effectiveWrite, agentMode: brokerAgentMode, dshSessionId: sessionId }
     );
     return {
       exitStatus: 0,
       dshSessionId: sessionId,
       dshSessionGeneration: result.generation ?? null,
-      payload: { status: 0, dshSessionId: sessionId, permissionMode: brokerMode, rawOutput: result.finalResponse ?? "" },
+      payload: {
+        status: 0,
+        dshSessionId: sessionId,
+        permissionMode: brokerMode,
+        agentMode: brokerAgentMode,
+        rawOutput: result.finalResponse ?? ""
+      },
       rendered,
       summary: firstMeaningfulLine(result.finalResponse, `${request.title} finished.`),
       jobTitle: request.title,
@@ -912,8 +923,8 @@ async function executeTaskRun(request) {
   const failureMessage = result.status === 0 ? "" : result.stderr || "dsh exited nonzero";
   return {
     exitStatus: result.status,
-    payload: { status: result.status, rawOutput, stderr: result.stderr },
-    rendered: renderTaskResult({ rawOutput, failureMessage }, { title: request.title, jobId: request.jobId ?? null, write }),
+    payload: { status: result.status, agentMode: mode, rawOutput, stderr: result.stderr },
+    rendered: renderTaskResult({ rawOutput, failureMessage }, { title: request.title, jobId: request.jobId ?? null, write, agentMode: mode }),
     summary: firstMeaningfulLine(rawOutput, firstMeaningfulLine(failureMessage, `${request.title} finished.`)),
     jobTitle: request.title,
     jobClass: "task",

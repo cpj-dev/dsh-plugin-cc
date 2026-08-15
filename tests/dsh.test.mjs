@@ -128,8 +128,12 @@ test("mode overlay: standard is the untouched composition, minimal disables down
     assert.match(yaml, new RegExp(`- id: ${id}\\n  disabled: true`), `row ${id} must be disabled`);
   }
   // The two tools minimal keeps must never end up in the disable list.
-  assert.doesNotMatch(yaml, /id: tool-bash\n/);
+  assert.doesNotMatch(yaml, /id: tool-bash\n  disabled: true/);
   assert.doesNotMatch(yaml, /id: tool-str-replace-editor\n/);
+  // bash must not advertise run_in_background: job_output/job_kill are
+  // disabled while the jobs SERVICE stays composed, so a background call
+  // would spawn an orphan the model can neither read nor kill.
+  assert.match(yaml, /- id: tool-bash\n  config:\n    enableRunInBackground: false/);
   // The sandbox stack is the safety boundary and must stay composed.
   for (const kept of ["sandbox", "sandbox-policy", "bash-sandbox", "approval", "permission"]) {
     assert.ok(!MINIMAL_MODE_DISABLED_ROWS.includes(kept), `row ${kept} must stay enabled`);
@@ -244,21 +248,28 @@ test("bridge one-shot runs default to minimal mode, switchable per run, env, and
   };
 
   // dsh shows better overall capability in minimal mode, so it is the default.
-  const defaulted = runBridge(["run", "task", "--cwd", workspace]);
+  const defaulted = runBridge(["run", "task", "--json", "--cwd", workspace]);
   assert.equal(defaulted.status, 0, defaulted.stderr);
   let patches = readPatchYaml();
   assert.match(patches, /mode: minimal/);
   assert.match(patches, /persona: 'You are a helpful software engineer assistant\.'/);
   assert.match(patches, /- id: tool-fs\n  disabled: true/);
   assert.match(patches, /- id: tool-web\n  disabled: true/);
+  assert.match(patches, /enableRunInBackground: false/);
+  // The composed mode is observable in the payload (--json prints the
+  // payload alone).
+  assert.equal(JSON.parse(defaulted.stdout).agentMode, "minimal");
 
-  const standard = runBridge(["run", "task", "--mode", "standard", "--cwd", workspace]);
+  const standard = runBridge(["run", "task", "--mode", "standard", "--json", "--cwd", workspace]);
   assert.equal(standard.status, 0, standard.stderr);
   assert.doesNotMatch(readPatchYaml(), /mode: minimal/);
+  assert.equal(JSON.parse(standard.stdout).agentMode, "standard");
 
+  // The rendered footer labels the agent mode and the sandbox apart.
   const envStandard = runBridge(["run", "task", "--cwd", workspace], { DSH_CC_MODE: "standard" });
   assert.equal(envStandard.status, 0, envStandard.stderr);
   assert.doesNotMatch(readPatchYaml(), /mode: minimal/);
+  assert.match(envStandard.stdout, /agent mode: standard · sandbox: read-only/);
 
   // A persisted machine default switches without a flag; the flag still wins.
   fs.writeFileSync(path.join(dir, "config.json"), `${JSON.stringify({ defaultMode: "standard" }, null, 2)}\n`);
@@ -268,6 +279,7 @@ test("bridge one-shot runs default to minimal mode, switchable per run, env, and
   const flagWins = runBridge(["run", "task", "--mode", "minimal", "--cwd", workspace]);
   assert.equal(flagWins.status, 0, flagWins.stderr);
   assert.match(readPatchYaml(), /mode: minimal/);
+  assert.match(flagWins.stdout, /agent mode: minimal · sandbox: read-only/);
 
   const invalid = runBridge(["run", "task", "--mode", "code", "--cwd", workspace]);
   assert.notEqual(invalid.status, 0);
