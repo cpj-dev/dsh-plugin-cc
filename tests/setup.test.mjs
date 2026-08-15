@@ -700,6 +700,36 @@ test("setup reinstalls the npm pin when the prefix lost its CLI, even with dsh o
   assert.deepEqual(report.nextSteps, []);
 });
 
+test("check reports an unsupported DSH_CC_MODE as not ready with a corrective step", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-check-bad-mode-");
+
+  const setup = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(setup.status, 0, setup.stderr);
+
+  // Every command resolves the mode before launching, so an unsupported
+  // env value makes both paths unusable — the summary must say so.
+  const broken = runBridge(["check", "--json", "--cwd", workspace], { ...env, DSH_CC_MODE: "code" }, workspace);
+  assert.equal(broken.status, 0, broken.stderr);
+  const report = JSON.parse(broken.stdout);
+  assert.equal(report.mode.ok, false);
+  assert.equal(report.ready, false);
+  assert.equal(report.multiTurnReady, false);
+  assert.ok(report.nextSteps.some((step) => step.includes("DSH_CC_MODE") && step.includes("minimal or standard")));
+
+  const valid = runBridge(["check", "--json", "--cwd", workspace], { ...env, DSH_CC_MODE: "standard" }, workspace);
+  const validReport = JSON.parse(valid.stdout);
+  assert.equal(validReport.mode.ok, true);
+  assert.equal(validReport.mode.value, "standard");
+  assert.equal(validReport.mode.source, "DSH_CC_MODE");
+  assert.equal(validReport.ready, true);
+  assert.ok(!validReport.nextSteps.some((step) => step.includes("DSH_CC_MODE")));
+});
+
 test("setup --mode persists the machine default agent mode", (t) => {
   if (!HARNESS_NODE_OK) {
     t.skip("needs Node >= 22.19 to run the harness");

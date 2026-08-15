@@ -319,6 +319,11 @@ async function buildCheckReport(cwd, actionsTaken = []) {
         : "Run /dsh:setup to create the multi-turn `cc` profile (one-shot review/delegate works without it)."
     );
   }
+  if (!mode.ok) {
+    nextSteps.push(
+      `DSH_CC_MODE is set to an unsupported value (${mode.detail}). Unset it or set it to minimal or standard, then rerun /dsh:check.`
+    );
+  }
 
   return {
     // A managed npm install off the verified pin makes the one-shot path
@@ -326,8 +331,11 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     // and DSH promises no compatibility between preview versions. The same
     // row describing an install the user overrode (DSH_BINARY / PATH) says
     // nothing about what will run, so readiness keys on the resolved source.
-    ready: nodeStatus.available && dshStatus.available && authStatus.ok && !managedNpmStale,
-    multiTurnReady: profileStatus.ready,
+    // A bad mode (an unsupported DSH_CC_MODE) fails BOTH readiness fields:
+    // every command resolves the mode before launching anything, one-shot
+    // and broker paths alike, so nothing can run until it is corrected.
+    ready: nodeStatus.available && dshStatus.available && authStatus.ok && !managedNpmStale && mode.ok,
+    multiTurnReady: profileStatus.ready && mode.ok,
     node: nodeStatus,
     dsh: dshStatus,
     auth: authStatus,
