@@ -39,9 +39,11 @@ import {
   HARNESS_SDK_JSONRPC_PACKAGE,
   inspectHarnessCheckout,
   installPinnedDshFromNpm,
+  normalizeMode,
   normalizePermissionMode,
   normalizeReasoningEffort,
   parseStructuredOutput,
+  resolveMode,
   pinnedSdkServerInstallSpecs,
   probeProfile,
   readPluginConfig,
@@ -53,6 +55,7 @@ import {
   selectHarnessNode,
   writeDshWrapper,
   writeModelOverlay,
+  writeModeOverlay,
   writePluginConfig,
   writeUnattendedOverlay
 } from "./lib/dsh.mjs";
@@ -121,10 +124,10 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/dsh-bridge.mjs check [--json]",
-      "  node scripts/dsh-bridge.mjs setup [--harness <checkout-dir>] [--json]",
-      "  node scripts/dsh-bridge.mjs review   [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>]",
-      "  node scripts/dsh-bridge.mjs critique [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>] [focus text]",
-      "  node scripts/dsh-bridge.mjs run [--background] [--write] [--session|--resume|--resume-last|--fresh] [--model <m>] [--effort <e>] [prompt]",
+      "  node scripts/dsh-bridge.mjs setup [--harness <checkout-dir>] [--mode minimal|standard] [--json]",
+      "  node scripts/dsh-bridge.mjs review   [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>] [--mode minimal|standard]",
+      "  node scripts/dsh-bridge.mjs critique [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>] [--mode minimal|standard] [focus text]",
+      "  node scripts/dsh-bridge.mjs run [--background] [--write] [--session|--resume|--resume-last|--fresh] [--model <m>] [--effort <e>] [--mode minimal|standard] [prompt]",
       "  node scripts/dsh-bridge.mjs run-resume-candidate [--json]",
       "  node scripts/dsh-bridge.mjs import [--source <jsonl>] [--json]",
       "  node scripts/dsh-bridge.mjs runs [run-id] [--all] [--json]",
@@ -255,6 +258,29 @@ async function buildCheckReport(cwd, actionsTaken = []) {
   }
   const harnessNode = selectHarnessNode();
 
+  // Effective default agent mode and where it comes from. A bad DSH_CC_MODE
+  // is reported here rather than crashing the readiness probe; a bad
+  // persisted defaultMode already falls back inside resolveMode.
+  let mode;
+  try {
+    const value = resolveMode({ config: pluginConfig });
+    let source = "built-in default";
+    if (String(process.env.DSH_CC_MODE ?? "").trim()) {
+      source = "DSH_CC_MODE";
+    } else {
+      try {
+        if (normalizeMode(pluginConfig.defaultMode)) {
+          source = "plugin config";
+        }
+      } catch {
+        // Unrecognized persisted value; the built-in default is in effect.
+      }
+    }
+    mode = { ok: true, value, source, detail: `${value} (${source}; per-run --mode overrides)` };
+  } catch (error) {
+    mode = { ok: false, value: null, source: "DSH_CC_MODE", detail: error.message };
+  }
+
   const nextSteps = [];
   if (!dshStatus.available) {
     nextSteps.push(
@@ -308,7 +334,12 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     profile: profileStatus,
     harness,
     npm,
-    broker: { detail: brokerStatus ? `running (pid ${brokerStatus.pid}, model ${brokerStatus.model})` : "not running (starts on demand)" },
+    mode,
+    broker: {
+      detail: brokerStatus
+        ? `running (pid ${brokerStatus.pid}, model ${brokerStatus.model}, mode ${brokerStatus.mode ?? "standard"})`
+        : "not running (starts on demand)"
+    },
     actionsTaken,
     nextSteps
   };
@@ -484,11 +515,20 @@ function persistNpmCli(prefix, binPath, harnessNode, actionsTaken) {
 
 async function handleSetup(argv) {
   const { options } = parseCommandInput(argv, {
-    valueOptions: ["cwd", "harness"],
+    valueOptions: ["cwd", "harness", "mode"],
     booleanOptions: ["json"]
   });
   const cwd = resolveCommandCwd(options);
   const actionsTaken = [];
+
+  if (options.mode) {
+    // Persist the machine default; per-run --mode still overrides it. The
+    // built-in default is minimal (dsh shows better overall capability
+    // there), so this is how a machine opts back into standard.
+    const defaultMode = normalizeMode(options.mode);
+    writePluginConfig({ defaultMode });
+    actionsTaken.push(`Set the default agent mode for this machine to ${defaultMode}.`);
+  }
 
   let checkoutRoot = null;
   const envBinary = String(process.env.DSH_BINARY ?? "").trim();
@@ -635,6 +675,9 @@ async function executeReviewRun(request) {
     model: request.model ?? DEFAULT_MODEL,
     effort: request.effort ?? DEFAULT_REASONING_EFFORT
   });
+  // Queued job files from pre-mode plugin versions carry no mode; resolve
+  // the machine default at execution time, same as the handler would have.
+  const mode = normalizeMode(request.mode) ?? resolveMode({});
 
   // Reviews are always read-only + unattended: the sandbox is the safety
   // boundary; approval 'never' just prevents fail-closed hangs (same
@@ -643,6 +686,7 @@ async function executeReviewRun(request) {
     prompt,
     permissionMode: "read-only",
     unattendedOverlay: writeUnattendedOverlay(resolveStateDir(request.cwd), "read-only"),
+    modeOverlay: writeModeOverlay(resolveStateDir(request.cwd), mode),
     modelOverlay,
     onProgress: request.onProgress
   });
@@ -748,6 +792,9 @@ async function executeTaskRun(request) {
 
   const write = Boolean(request.write);
   const permissionMode = write ? "workspace-write" : "read-only";
+  // Queued job files from pre-mode plugin versions carry no mode; resolve
+  // the machine default at execution time, same as the handler would have.
+  const mode = normalizeMode(request.mode) ?? resolveMode({});
 
   // Broker path: --session (fresh resumable) or --resume (continue).
   if (request.useBroker) {
@@ -772,9 +819,10 @@ async function executeTaskRun(request) {
       socketPath = resolveBrokerPaths(workspaceRoot).socketPath;
     } else {
       request.onProgress?.({ message: "Ensuring the DSH broker is up.", phase: "starting" });
-      // Broker permission mode applies at runtime spawn; a live broker keeps
-      // the mode it started with (documented limitation).
-      socketPath = await ensureBroker(workspaceRoot, { permissionMode: write ? "workspace-write" : "read-only" });
+      // Broker permission mode and agent mode both apply at runtime spawn; a
+      // live broker keeps what it started with (documented limitation), and
+      // ensureBroker refuses a live broker whose mode differs.
+      socketPath = await ensureBroker(workspaceRoot, { permissionMode: write ? "workspace-write" : "read-only", mode });
     }
     // Patch the session id onto the job record BEFORE the turn starts, so a
     // concurrent `stop` can see this is a broker-backed run in flight.
@@ -847,6 +895,7 @@ async function executeTaskRun(request) {
     prompt,
     permissionMode,
     unattendedOverlay: writeUnattendedOverlay(resolveStateDir(workspaceRoot), permissionMode),
+    modeOverlay: writeModeOverlay(resolveStateDir(workspaceRoot), mode),
     modelOverlay,
     onProgress: request.onProgress
   });
@@ -939,13 +988,14 @@ function enqueueBackgroundJob(cwd, job, request) {
 
 async function handleReviewCommand(argv, config) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "effort", "cwd"],
+    valueOptions: ["base", "scope", "model", "effort", "mode", "cwd"],
     booleanOptions: ["json", "background", "wait"]
   });
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const model = options.model ? String(options.model).trim() : null;
   const effort = normalizeReasoningEffort(options.effort);
+  const mode = resolveMode({ flag: options.mode ?? null });
   const focusText = positionals.join(" ").trim();
   const target = resolveReviewTarget(cwd, { base: options.base, scope: options.scope });
 
@@ -965,6 +1015,7 @@ async function handleReviewCommand(argv, config) {
     scope: options.scope,
     model,
     effort,
+    mode,
     focusText,
     reviewName: config.reviewName
   };
@@ -980,13 +1031,14 @@ async function handleReviewCommand(argv, config) {
 
 async function handleRun(argv) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "cwd", "prompt-file", "timeout-ms"],
+    valueOptions: ["model", "effort", "mode", "cwd", "prompt-file", "timeout-ms"],
     booleanOptions: ["json", "write", "session", "resume", "resume-last", "fresh", "background"]
   });
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const model = options.model ? String(options.model).trim() : null;
   const effort = normalizeReasoningEffort(options.effort);
+  const mode = resolveMode({ flag: options.mode ?? null });
 
   let prompt = "";
   if (options["prompt-file"]) {
@@ -1012,6 +1064,9 @@ async function handleRun(argv) {
   }
   if (resume && model) {
     process.stderr.write("Warning: --model is ignored on --resume; the broker keeps its startup model.\n");
+  }
+  if (resume && options.mode) {
+    process.stderr.write("Warning: --mode is ignored on --resume; the broker keeps its startup mode.\n");
   }
 
   let resumeSessionId = null;
@@ -1052,6 +1107,7 @@ async function handleRun(argv) {
     cwd,
     model,
     effort,
+    mode,
     prompt,
     write: Boolean(options.write),
     useBroker,

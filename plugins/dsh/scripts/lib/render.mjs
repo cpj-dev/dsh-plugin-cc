@@ -19,9 +19,12 @@ export function renderCheckReport(report) {
   }
   lines.push(
     `${statusIcon(report.auth.ok)} credentials — ${report.auth.detail}`,
-    `${statusIcon(report.profile.ready)} cc profile — ${report.profile.detail}`,
-    `${statusIcon(true)} broker — ${report.broker.detail}`
+    `${statusIcon(report.profile.ready)} cc profile — ${report.profile.detail}`
   );
+  if (report.mode) {
+    lines.push(`${statusIcon(report.mode.ok)} mode — ${report.mode.detail}`);
+  }
+  lines.push(`${statusIcon(true)} broker — ${report.broker.detail}`);
   if (report.actionsTaken?.length) {
     lines.push("", "Actions taken:");
     for (const action of report.actionsTaken) {

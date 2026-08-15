@@ -44,7 +44,9 @@ import {
   normalizePermissionMode,
   normalizeReasoningEffort,
   resolveDshBinary,
+  resolveMode,
   writeModelOverlay,
+  writeModeOverlay,
   writeUnattendedOverlay
 } from "./lib/dsh.mjs";
 import { isPidAlive } from "./lib/process.mjs";
@@ -53,17 +55,22 @@ const DEFAULT_PROVIDER = "deepseek-official";
 
 /** Line-JSON-RPC client for the DSH SDK runtime child process. */
 class RuntimeClient {
-  constructor({ cwd, provider, model, effort, permissionMode, binary, unattendedOverlay, effortOverlay }) {
+  constructor({ cwd, provider, model, effort, mode, permissionMode, binary, unattendedOverlay, effortOverlay, modeOverlay }) {
     this.cwd = cwd;
     this.provider = provider;
     this.model = model;
     this.effort = effort ?? null;
+    // Fixed for this broker's lifetime, like permissionMode: the mode overlay
+    // is composed into the runtime at spawn, so switching means /dsh:stop
+    // --broker and a fresh start.
+    this.mode = mode ?? null;
     this.permissionMode = permissionMode;
     this.binary = binary;
     this.unattendedOverlay = unattendedOverlay ?? null;
     // Effort rides a --patch overlay (llm-deepseek row); the model itself
     // travels on the initialize wire message instead.
     this.effortOverlay = effortOverlay ?? null;
+    this.modeOverlay = modeOverlay ?? null;
     this.child = null;
     this.nextId = 1;
     this.pending = new Map();
@@ -87,12 +94,19 @@ class RuntimeClient {
     if (this.unattendedOverlay) {
       args.push("--patch", this.unattendedOverlay);
     }
+    if (this.modeOverlay) {
+      args.push("--patch", this.modeOverlay);
+    }
     if (this.effortOverlay) {
       args.push("--patch", this.effortOverlay);
     }
+    const env = { ...process.env, DSH_PERMISSION_MODE: this.permissionMode };
+    // Mode ownership belongs to the plugin's --mode; the bundles read this
+    // env to flip Code Mode process-wide, so it must not leak through.
+    delete env.DSH_TOOLS_MODE;
     this.child = spawn(this.binary, args, {
       cwd: this.cwd,
-      env: { ...process.env, DSH_PERMISSION_MODE: this.permissionMode },
+      env,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true
     });
@@ -325,7 +339,7 @@ async function main() {
     );
   }
   const { options } = parseArgs(argv, {
-    valueOptions: ["cwd", "state-dir", "socket", "provider", "model", "effort", "permission-mode"]
+    valueOptions: ["cwd", "state-dir", "socket", "provider", "model", "effort", "mode", "permission-mode"]
   });
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
   const stateDir = options["state-dir"] ? path.resolve(options["state-dir"]) : null;
@@ -371,15 +385,18 @@ async function main() {
   const runtimePermissionMode = normalizePermissionMode(options["permission-mode"]) ?? "workspace-write";
   const runtimeEffort =
     normalizeReasoningEffort(options.effort || process.env.DSH_CC_EFFORT || null) ?? DEFAULT_REASONING_EFFORT;
+  const runtimeMode = resolveMode({ flag: options.mode || null });
   const runtime = new RuntimeClient({
     cwd,
     provider: options.provider || process.env.DSH_CC_PROVIDER || DEFAULT_PROVIDER,
     model: options.model || process.env.DSH_CC_MODEL || DEFAULT_MODEL,
     effort: runtimeEffort,
+    mode: runtimeMode,
     permissionMode: runtimePermissionMode,
     binary: resolveDshBinary(),
     unattendedOverlay: writeUnattendedOverlay(stateDir, runtimePermissionMode),
-    effortOverlay: writeModelOverlay(stateDir, { effort: runtimeEffort })
+    effortOverlay: writeModelOverlay(stateDir, { effort: runtimeEffort }),
+    modeOverlay: writeModeOverlay(stateDir, runtimeMode)
   });
 
   let activeRun = null;
@@ -396,6 +413,7 @@ async function main() {
           provider: runtime.provider,
           model: runtime.model,
           effort: runtime.effort,
+          mode: runtime.mode,
           permissionMode: runtime.permissionMode,
           lastSessionId,
           // Informational only; the status RPC's generation is authoritative.
@@ -464,6 +482,7 @@ async function main() {
               provider: runtime.provider,
               model: runtime.model,
               effort: runtime.effort,
+              mode: runtime.mode,
               permissionMode: runtime.permissionMode
             }
           });

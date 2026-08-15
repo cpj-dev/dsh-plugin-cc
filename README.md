@@ -38,12 +38,14 @@ Have your own built [deepseek-harness](https://github.com/deepseek-ai/deepseek-h
 | `/dsh:setup` | Install/link the pinned npm CLI (or `--harness <built-checkout>`) and create the multi-turn `cc` profile | — |
 | `/dsh:review [focus]` | Read-only code review of local changes | no |
 | `/dsh:critique [focus]` | Structured adversarial design critique | no |
-| `/dsh:run <task>` | Run a task (read-only by default; `--write`, `--session`, `--resume`, `--model`, `--effort`, `--background`) | only for `--session`/`--resume` |
+| `/dsh:run <task>` | Run a task (read-only by default; `--write`, `--session`, `--resume`, `--model`, `--effort`, `--mode`, `--background`) | only for `--session`/`--resume` |
 | `/dsh:delegate <task>` | Background delegation via the `dsh-delegate` subagent | no |
 | `/dsh:import` | Transfer this conversation into a resumable dsh session | yes |
 | `/dsh:runs [id]` | List runs / one run's status | no |
 | `/dsh:show [id]` | Stored result of a finished run | no |
 | `/dsh:stop [id]` / `--broker` | Kill a run's process tree / the shared broker | no |
+
+Runs default to the **minimal** agent mode — dsh shows better overall capability there (a one-line persona, bash + `str_replace_editor` only). Switch per run with `--mode standard` for the full toolset (file/web search, skills, subagents), or persist a machine default with `/dsh:setup --mode standard`.
 
 Full command semantics: [docs/commands.md](docs/commands.md). Installation and runtime failures are covered in [docs/troubleshooting.md](docs/troubleshooting.md).
 

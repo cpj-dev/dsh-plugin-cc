@@ -19,6 +19,15 @@
  * - Model/effort selection is a generated `--patch` overlay replacing the
  *   `agent-default-model` and `llm-deepseek` rows; `--patch` is the last
  *   composition layer, so it wins over profile and home patches.
+ * - Mode selection (minimal | standard) is a generated `--patch` overlay
+ *   too: dsh shows better overall capability in minimal mode, so it is the
+ *   plugin default. `minimal` disables the dsh-base tool/prompt rows down
+ *   to bash + str_replace_editor and fixes the persona; `standard` applies
+ *   no overlay. The disabled row ids mirror dsh-base's composition and must
+ *   be re-verified on every dsh upgrade (see docs/dsh-compat.md).
+ *   `DSH_TOOLS_MODE` is stripped from every spawn env: the headless bundle
+ *   reads it to flip Code Mode process-wide, and mode ownership belongs to
+ *   the plugin's --mode.
  * - Headless has no session resume; multi-turn goes through the broker
  *   (see dsh-broker.mjs), never through this file.
  * - Default install is the npm CLI (`@deepseek-ai/dsh@HARNESS_NPM_VERSION`)
@@ -49,6 +58,17 @@ const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
 const PERMISSION_MODE_ENV = "DSH_PERMISSION_MODE";
 const VALID_PERMISSION_MODES = new Set(["read-only", "workspace-write", "danger-full-access"]);
 const VALID_EFFORTS = new Set(["low", "medium", "high", "max"]);
+const VALID_MODES = new Set(["minimal", "standard"]);
+const MODE_ENV = "DSH_CC_MODE";
+/** Read by the headless/web bundles to flip Code Mode process-wide; never ours to forward. */
+const TOOLS_MODE_ENV = "DSH_TOOLS_MODE";
+
+/**
+ * Plugin-wide default agent mode. dsh shows better overall capability in
+ * minimal mode, so every run and broker spawn defaults to it; `standard`
+ * (the full dsh-base toolset) stays one `--mode` away.
+ */
+export const DEFAULT_MODE = "minimal";
 
 /**
  * Plugin-wide default model selection, applied whenever a run does not pass
@@ -360,6 +380,46 @@ export function normalizeReasoningEffort(effort) {
   return normalized;
 }
 
+/** Validate and normalize an agent mode; null passes through. */
+export function normalizeMode(mode) {
+  if (mode == null || mode === "") {
+    return null;
+  }
+  const normalized = String(mode).trim().toLowerCase();
+  if (!VALID_MODES.has(normalized)) {
+    throw new Error(`Unsupported mode "${mode}". Use minimal or standard.`);
+  }
+  return normalized;
+}
+
+/**
+ * Resolve the effective agent mode: --mode flag > DSH_CC_MODE env >
+ * persisted plugin config (`defaultMode`) > built-in DEFAULT_MODE.
+ */
+export function resolveMode({ flag = null, env = process.env, config = null } = {}) {
+  const fromFlag = normalizeMode(flag);
+  if (fromFlag) {
+    return fromFlag;
+  }
+  const fromEnv = normalizeMode(env?.[MODE_ENV]);
+  if (fromEnv) {
+    return fromEnv;
+  }
+  // Persisted machine state, not this invocation's input: an unrecognized
+  // stored value (a future mode, a hand-edited config) must not brick every
+  // command, so it falls back to the built-in default instead of throwing.
+  const pluginConfig = config ?? readPluginConfig(env);
+  try {
+    const fromConfig = normalizeMode(pluginConfig.defaultMode);
+    if (fromConfig) {
+      return fromConfig;
+    }
+  } catch {
+    // fall through to the built-in default
+  }
+  return DEFAULT_MODE;
+}
+
 function yamlQuote(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
@@ -427,6 +487,97 @@ export function writeUnattendedOverlay(dir, permissionMode) {
   return file;
 }
 
+/**
+ * dsh-base composition rows the minimal mode disables, by row id. Everything
+ * model-facing except bash + str_replace_editor: the tool rows themselves,
+ * the service rows only those tools consume, and the prompt contributors.
+ * Deliberately kept despite the webui minimal preset dropping them: the
+ * sandboxed fs stack (DSH_PERMISSION_MODE stays the safety boundary), the
+ * one-shot tool-bash (the preset's persistent terminal stack is agent-plane),
+ * and compaction (unattended long runs must survive context pressure).
+ * Row ids mirror dsh-base's cordis.patch.yml — re-verify on every dsh
+ * upgrade (docs/dsh-compat.md).
+ */
+export const MINIMAL_MODE_DISABLED_ROWS = [
+  // model-facing tool rows
+  "tool-pwsh",
+  "tool-jobs",
+  "tool-fs",
+  "tool-fs-search",
+  "tool-skill",
+  "tool-subagent-control",
+  "tool-subagent-list-agents",
+  "tool-subagent",
+  "tool-subagent-fork",
+  "tool-subagent-report",
+  "tool-workflow",
+  "tool-todo",
+  "tool-goal",
+  "tool-ralph",
+  "tool-web",
+  // service rows only the disabled tools consume
+  "skill",
+  "skill-filesystem",
+  "skill-badge",
+  "subagent",
+  "subagent-spawn-in-process",
+  "subagent-fork-in-process",
+  "workflow-worker-thread",
+  "web",
+  "web-search-deepseek",
+  "goal",
+  "goal-round-driver",
+  "command-goal",
+  "plan-mode",
+  // prompt contributors
+  "agent-instructions",
+  "repeat-tool-reminder",
+  "user-questions"
+];
+
+/** The complete minimal-mode persona (replaces the deployment persona). */
+export const MINIMAL_MODE_PERSONA = "You are a helpful software engineer assistant.";
+
+/**
+ * Render the mode overlay (a dsh `--patch` layer). `standard` is the
+ * untouched dsh-base composition and returns null; `minimal` fixes the
+ * persona and disables every model-facing row except bash and
+ * str_replace_editor.
+ */
+export function buildModeOverlayYaml(mode) {
+  const normalized = normalizeMode(mode) ?? DEFAULT_MODE;
+  if (normalized === "standard") {
+    return null;
+  }
+  const lines = [
+    "# generated by dsh-plugin-cc (mode: minimal; see lib/dsh.mjs)",
+    "- id: system-prompt",
+    "  config:",
+    `    persona: ${yamlQuote(MINIMAL_MODE_PERSONA)}`
+  ];
+  for (const id of MINIMAL_MODE_DISABLED_ROWS) {
+    lines.push(`- id: ${id}`, "  disabled: true");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Write the mode overlay under `<dir>/overlays`; returns its path, or null
+ * for standard (no overlay). Deterministic filename: the content depends
+ * only on the plugin version, so reruns overwrite in place.
+ */
+export function writeModeOverlay(dir, mode) {
+  const yaml = buildModeOverlayYaml(mode);
+  if (!yaml) {
+    return null;
+  }
+  const overlaysDir = path.join(dir, "overlays");
+  fs.mkdirSync(overlaysDir, { recursive: true });
+  const file = path.join(overlaysDir, "mode-minimal.yml");
+  fs.writeFileSync(file, yaml, "utf8");
+  return file;
+}
+
 /** Write the model overlay to a temp file; returns its path or null. */
 export function writeModelOverlay(stateDir, selection) {
   const yaml = buildModelOverlayYaml(selection);
@@ -474,6 +625,7 @@ function emitProgress(onProgress, message, phase = null, extra = {}) {
  * - permissionMode: read-only (default) | workspace-write | danger-full-access
  * - unattendedOverlay (required path): approval-never patch layer
  * - modelOverlay: optional generated model/effort patch layer
+ * - modeOverlay: optional generated mode patch layer (null for standard)
  * - extraPatches: optional user-supplied overlay paths
  * - onProgress: progress reporter
  *
@@ -492,13 +644,16 @@ export function runHeadlessAgent(cwd, options = {}) {
   const permissionMode = normalizePermissionMode(options.permissionMode) ?? "read-only";
   const args = buildHeadlessArgs({
     task: prompt,
-    patches: [options.unattendedOverlay, options.modelOverlay, ...(options.extraPatches ?? [])]
+    patches: [options.unattendedOverlay, options.modeOverlay, options.modelOverlay, ...(options.extraPatches ?? [])]
   });
 
   const env = {
     ...(options.env ?? process.env),
     [PERMISSION_MODE_ENV]: permissionMode
   };
+  // The headless bundle reads this to flip Code Mode process-wide; mode
+  // ownership belongs to --mode, so an inherited value must not leak through.
+  delete env[TOOLS_MODE_ENV];
 
   const platform = options.platform ?? process.platform;
   const detached = options.detached ?? platform !== "win32";

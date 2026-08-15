@@ -38,5 +38,7 @@ In a scratch git repo with the plugin installed:
 8. `/dsh:import` → digest acknowledged; `/dsh:run --resume` continues with the imported context.
 9. `/dsh:stop --broker` → broker gone; a later `--resume` errors explicitly ("no live broker holds it"), and after a new `--session` run the old session stays unreachable — never a silent fresh session reported as a resume.
 10. Kill Claude Code mid-background-run → worker survives; a new session's `/dsh:runs --all` still finds it.
+11. `/dsh:run "name every tool you can call"` → the answer names only bash and `str_replace_editor` (minimal default, the mode dsh performs best in overall); the same prompt with `--mode standard` names the full toolset (file/web search, skills, subagents).
+12. `/dsh:run --session "hi"` on a fresh workspace, then `/dsh:run --session --mode standard "hi"` → explicit mode-mismatch error naming `/dsh:stop --broker`; after stopping, the standard `--session` run works and `/dsh:check` shows the broker's mode.
 
 Record the dsh version used at the top of the release notes; it must match the [dsh-compat.md](dsh-compat.md) pin.

@@ -700,6 +700,39 @@ test("setup reinstalls the npm pin when the prefix lost its CLI, even with dsh o
   assert.deepEqual(report.nextSteps, []);
 });
 
+test("setup --mode persists the machine default agent mode", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, env } = makeSetupEnv();
+  env.DSH_CC_MODE = "";
+  const workspace = makeTempDir("ws-default-mode-");
+  const readConfig = () => JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+
+  const result = runBridge(["setup", "--json", "--mode", "standard", "--cwd", workspace], env, workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.ok(report.actionsTaken.some((line) => line.includes("default agent mode for this machine to standard")));
+  assert.equal(report.mode.value, "standard");
+  assert.equal(report.mode.source, "plugin config");
+  assert.equal(readConfig().defaultMode, "standard");
+
+  // A plain rerun keeps the persisted default; --mode minimal switches back.
+  const rerun = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(readConfig().defaultMode, "standard");
+  assert.equal(JSON.parse(rerun.stdout).mode.value, "standard");
+
+  const back = runBridge(["setup", "--json", "--mode", "minimal", "--cwd", workspace], env, workspace);
+  assert.equal(back.status, 0, back.stderr);
+  assert.equal(readConfig().defaultMode, "minimal");
+
+  const invalid = runBridge(["setup", "--mode", "code", "--cwd", workspace], env, workspace);
+  assert.notEqual(invalid.status, 0);
+  assert.match(invalid.stderr, /Unsupported mode "code"/);
+});
+
 test("setup rewrites a deleted wrapper without reinstalling the intact pin", (t) => {
   if (!HARNESS_NODE_OK) {
     t.skip("needs Node >= 22.19 to run the harness");
