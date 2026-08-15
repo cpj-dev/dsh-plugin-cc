@@ -18,10 +18,10 @@ stdout is the user-facing result; render it verbatim. A nonzero exit means the r
 | Subcommand | Purpose | Key flags |
 |---|---|---|
 | `check` | readiness probe | `--json` |
-| `setup` | install the pinned npm CLI (or `--harness <built-checkout>`) and create/verify the multi-turn `cc` profile | `--harness <path>`, `--json` |
-| `review` | read-only code review | `--base <ref>`, `--scope`, `--model`, `--effort`, `--background` |
+| `setup` | install the pinned npm CLI (or `--harness <built-checkout>`) and create/verify the multi-turn `cc` profile | `--harness <path>`, `--mode`, `--json` |
+| `review` | read-only code review | `--base <ref>`, `--scope`, `--model`, `--effort`, `--mode`, `--background` |
 | `critique` | structured adversarial critique | same as review |
-| `run` | task execution | `--write`, `--session`, `--resume`, `--fresh`, `--model`, `--effort`, `--background`, `--prompt-file` |
+| `run` | task execution | `--write`, `--session`, `--resume`, `--fresh`, `--model`, `--effort`, `--mode`, `--background`, `--prompt-file` |
 | `run-resume-candidate` | is a resumable dsh session available? | `--json` |
 | `import` | weak-import this conversation into a resumable session | `--source <jsonl>` |
 | `runs` | list runs / one run's status | `[run-id]`, `--all` |
@@ -33,6 +33,7 @@ stdout is the user-facing result; render it verbatim. A nonzero exit means the r
 - Sandbox: default runs are read-only; `--write` grants workspace-write. There is no mid-run approval — permissions are decided before launch.
 - Fresh runs are one-shot headless dsh sessions and are NOT resumable. Only `--session`, `--resume`, and `import` (broker paths) record resumable session ids.
 - `--model`/`--effort` work on one-shot runs; a `--resume` keeps the broker's startup model. Plugin defaults when omitted: model `deepseek-v4-pro`, effort `max` (one-shot and broker alike).
+- Agent mode defaults to `minimal` (dsh shows better overall capability there: one-line persona, bash + str_replace_editor only). `--mode standard` restores the full toolset per run; `DSH_CC_MODE` and the persisted `/dsh:setup --mode` default sit between flag and built-in. A live broker keeps its startup mode — a `--session` run resolving a different mode errors and names `/dsh:stop --broker`.
 - `--background` returns immediately with a run id; the actual work continues in a detached worker. Poll `runs <id>`, fetch `show <id>`.
 - `stop` kills processes; a mid-turn broker stop discards all in-memory dsh sessions for the workspace.
 - Environment: `DSH_BINARY` overrides the dsh executable; `DSH_CC_SESSION_ID`/`DSH_CC_TRANSCRIPT_PATH` are exported by the SessionStart hook — never set them manually.

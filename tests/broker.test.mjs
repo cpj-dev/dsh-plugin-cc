@@ -26,14 +26,22 @@ function countBrokerDaemons(stateDir) {
 }
 
 /**
- * A wrapper `dsh` that ignores its argv (`--profile cc`) and execs the fake
- * SDK runtime, so the broker's spawn path runs unmodified.
+ * A wrapper `dsh` that records its argv (`--profile cc --patch ...`), then
+ * execs the fake SDK runtime, so the broker's spawn path runs unmodified.
  */
 function writeFakeRuntimeWrapper(dir) {
   const wrapper = path.join(dir, "dsh");
   const runtime = path.join(TESTS_DIR, "fake-sdk-runtime.mjs");
-  fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${runtime}"\n`, { mode: 0o755 });
+  fs.writeFileSync(
+    wrapper,
+    `#!/bin/sh\nprintf '%s\\n' "$@" > "${dir}/runtime-argv.txt"\nexec "${process.execPath}" "${runtime}"\n`,
+    { mode: 0o755 }
+  );
   return wrapper;
+}
+
+function readRuntimeArgv(dir) {
+  return fs.readFileSync(path.join(dir, "runtime-argv.txt"), "utf8").split("\n").filter(Boolean);
 }
 
 test("broker multi-turn: session continuity, status, and shutdown", async () => {
@@ -68,9 +76,47 @@ test("broker multi-turn: session continuity, status, and shutdown", async () => 
     assert.equal(status.lastSessionId, fresh.sessionId);
     assert.equal(status.model, "deepseek-v4-pro", "broker sessions default to the plugin model");
     assert.equal(status.effort, "max", "broker sessions default to the plugin reasoning effort");
+    assert.equal(status.mode, "minimal", "broker sessions default to the plugin agent mode");
+
+    // The mode overlay is composed into the runtime spawn itself.
+    const runtimeArgv = readRuntimeArgv(binDir);
+    const modePatch = runtimeArgv.find((arg) => arg.endsWith("mode-minimal.yml"));
+    assert.ok(modePatch, `runtime argv carries the mode overlay: ${runtimeArgv.join(" ")}`);
+    assert.match(fs.readFileSync(modePatch, "utf8"), /- id: tool-fs\n  disabled: true/);
+
+    // A live broker's mode is fixed at spawn: asking for the other mode is
+    // an explicit refusal, never a silent divergence or a restart.
+    await assert.rejects(
+      () => ensureBroker(workspace, { permissionMode: "read-only", mode: "standard" }),
+      /runs mode minimal.*resolved mode standard.*\/dsh:stop --broker/s
+    );
 
     assert.equal(await stopBroker(workspace), true);
     assert.equal(await getBrokerStatus(workspace), null);
+  });
+});
+
+test("a standard-mode broker composes no mode overlay and refuses a minimal request", async () => {
+  const dataDir = makeTempDir();
+  const workspace = makeTempDir("ws-broker-standard-");
+  const binDir = makeTempDir("bin-");
+  const wrapper = writeFakeRuntimeWrapper(binDir);
+
+  await withEnv({ CLAUDE_PLUGIN_DATA: dataDir, DSH_BINARY: wrapper }, async () => {
+    const socketPath = await ensureBroker(workspace, { permissionMode: "read-only", mode: "standard" });
+    // The runtime child spawns lazily on the first run; force it so the
+    // recorded argv exists.
+    await brokerRequest(socketPath, "run", { prompt: "hello" }, { timeoutMs: 10_000 });
+    const status = await getBrokerStatus(workspace);
+    assert.equal(status.mode, "standard");
+    assert.ok(!readRuntimeArgv(binDir).some((arg) => arg.endsWith("mode-minimal.yml")));
+
+    await assert.rejects(
+      () => ensureBroker(workspace, { permissionMode: "read-only", mode: "minimal" }),
+      /runs mode standard.*resolved mode minimal/s
+    );
+
+    assert.equal(await stopBroker(workspace), true);
   });
 });
 

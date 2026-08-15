@@ -700,6 +700,69 @@ test("setup reinstalls the npm pin when the prefix lost its CLI, even with dsh o
   assert.deepEqual(report.nextSteps, []);
 });
 
+test("check reports an unsupported DSH_CC_MODE as not ready with a corrective step", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { env } = makeSetupEnv();
+  const workspace = makeTempDir("ws-check-bad-mode-");
+
+  const setup = runBridge(["setup", "--cwd", workspace], env, workspace);
+  assert.equal(setup.status, 0, setup.stderr);
+
+  // Every command resolves the mode before launching, so an unsupported
+  // env value makes both paths unusable — the summary must say so.
+  const broken = runBridge(["check", "--json", "--cwd", workspace], { ...env, DSH_CC_MODE: "code" }, workspace);
+  assert.equal(broken.status, 0, broken.stderr);
+  const report = JSON.parse(broken.stdout);
+  assert.equal(report.mode.ok, false);
+  assert.equal(report.ready, false);
+  assert.equal(report.multiTurnReady, false);
+  assert.ok(report.nextSteps.some((step) => step.includes("DSH_CC_MODE") && step.includes("minimal or standard")));
+
+  const valid = runBridge(["check", "--json", "--cwd", workspace], { ...env, DSH_CC_MODE: "standard" }, workspace);
+  const validReport = JSON.parse(valid.stdout);
+  assert.equal(validReport.mode.ok, true);
+  assert.equal(validReport.mode.value, "standard");
+  assert.equal(validReport.mode.source, "DSH_CC_MODE");
+  assert.equal(validReport.ready, true);
+  assert.ok(!validReport.nextSteps.some((step) => step.includes("DSH_CC_MODE")));
+});
+
+test("setup --mode persists the machine default agent mode", (t) => {
+  if (!HARNESS_NODE_OK) {
+    t.skip("needs Node >= 22.19 to run the harness");
+    return;
+  }
+  const { dataDir, env } = makeSetupEnv();
+  env.DSH_CC_MODE = "";
+  const workspace = makeTempDir("ws-default-mode-");
+  const readConfig = () => JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+
+  const result = runBridge(["setup", "--json", "--mode", "standard", "--cwd", workspace], env, workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.ok(report.actionsTaken.some((line) => line.includes("default agent mode for this machine to standard")));
+  assert.equal(report.mode.value, "standard");
+  assert.equal(report.mode.source, "plugin config");
+  assert.equal(readConfig().defaultMode, "standard");
+
+  // A plain rerun keeps the persisted default; --mode minimal switches back.
+  const rerun = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(readConfig().defaultMode, "standard");
+  assert.equal(JSON.parse(rerun.stdout).mode.value, "standard");
+
+  const back = runBridge(["setup", "--json", "--mode", "minimal", "--cwd", workspace], env, workspace);
+  assert.equal(back.status, 0, back.stderr);
+  assert.equal(readConfig().defaultMode, "minimal");
+
+  const invalid = runBridge(["setup", "--mode", "code", "--cwd", workspace], env, workspace);
+  assert.notEqual(invalid.status, 0);
+  assert.match(invalid.stderr, /Unsupported mode "code"/);
+});
+
 test("setup rewrites a deleted wrapper without reinstalling the intact pin", (t) => {
   if (!HARNESS_NODE_OK) {
     t.skip("needs Node >= 22.19 to run the harness");

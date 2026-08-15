@@ -15,3 +15,5 @@ What it does, end to end (each step skipped when already done — rerunning is a
 2. **The `cc` profile** for multi-turn sessions: dsh-base + the SDK JSON-RPC server. Default path: `dsh plugin --profile cc add @deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` **plus that package's published peerDependencies** (a server-only add cannot resolve `@deepseek-ai/dsh-sdk-protocol` at boot). `--harness` link:-installs `<checkout>/packages/sdk/server`. Approval `never`, verified via `--dump-config`. One-shot commands (`/dsh:review`, `/dsh:critique`, fresh `/dsh:run`) work without the profile; `--session`, `--resume`, and `/dsh:import` need it.
 
 After setup, the only remaining prerequisite is a `DEEPSEEK_API_KEY` (env var, `$DSH_HOME/.credentials.yaml`, or `.env`) — the report's next steps say so when it is missing.
+
+`--mode minimal|standard` persists this machine's default agent mode. The built-in default is `minimal` (dsh shows better overall capability there); `/dsh:setup --mode standard` opts the machine back into the full toolset, and per-run `--mode` still overrides.

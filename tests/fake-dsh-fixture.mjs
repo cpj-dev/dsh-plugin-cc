@@ -18,7 +18,10 @@ if (recordFile) {
       {
         argv,
         cwd: process.cwd(),
-        env: { DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? null }
+        env: {
+          DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? null,
+          DSH_TOOLS_MODE: process.env.DSH_TOOLS_MODE ?? null
+        }
       },
       null,
       2

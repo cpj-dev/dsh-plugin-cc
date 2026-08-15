@@ -166,7 +166,7 @@ function reclaimStaleStartLock(startLockFile) {
   return { reclaimed: false, starterPid };
 }
 
-function spawnBrokerDaemon(workspaceRoot, { socketPath, permissionMode, provider, model }) {
+function spawnBrokerDaemon(workspaceRoot, { socketPath, permissionMode, provider, model, mode }) {
   const args = [
     path.join(SCRIPTS_DIR, "dsh-broker.mjs"),
     "serve",
@@ -185,6 +185,9 @@ function spawnBrokerDaemon(workspaceRoot, { socketPath, permissionMode, provider
   if (model) {
     args.push("--model", model);
   }
+  if (mode) {
+    args.push("--mode", mode);
+  }
   const child = spawn(process.execPath, args, {
     cwd: workspaceRoot,
     env: process.env,
@@ -196,20 +199,46 @@ function spawnBrokerDaemon(workspaceRoot, { socketPath, permissionMode, provider
 }
 
 /**
+ * Refuse a live broker whose composed mode differs from the one this run
+ * resolved. The mode overlay is composed into the runtime at spawn, so a
+ * mismatch cannot be reconciled in place — only an explicit restart can,
+ * and that discards the broker's in-memory sessions, which is never this
+ * function's call to make. Brokers from pre-mode plugin versions report no
+ * mode and ran the untouched composition, which is exactly `standard`.
+ */
+function assertBrokerModeMatches(status, requestedMode) {
+  if (!requestedMode || !status) {
+    return;
+  }
+  const liveMode = status.mode ?? "standard";
+  if (liveMode !== requestedMode) {
+    throw new Error(
+      `The live DSH broker runs mode ${liveMode}, but this run resolved mode ${requestedMode}. The mode is fixed when the broker starts: run /dsh:stop --broker (its in-memory sessions are lost), then rerun.`
+    );
+  }
+}
+
+/**
  * Ensure a live broker for the workspace; spawns a detached one when needed.
- * Returns the socket path.
+ * Returns the socket path. A live broker must match the requested mode —
+ * see assertBrokerModeMatches.
  *
  * Check-and-spawn is serialized by an O_EXCL startup lock so two concurrent
  * callers cannot both spawn daemons that fight over the socket and pid file.
  * (The state lock cannot be reused here: it is synchronous and this path
  * awaits a multi-second spawn/poll.) Losers piggyback on the winner's broker.
  */
-export async function ensureBroker(workspaceRoot, { permissionMode = "workspace-write", provider = null, model = null } = {}) {
+export async function ensureBroker(
+  workspaceRoot,
+  { permissionMode = "workspace-write", provider = null, model = null, mode = null } = {}
+) {
   const { socketPath, startLockFile } = resolveBrokerPaths(workspaceRoot);
   const deadline = Date.now() + START_WAIT_MS;
 
   while (Date.now() < deadline) {
-    if (await getBrokerStatus(workspaceRoot)) {
+    const liveStatus = await getBrokerStatus(workspaceRoot);
+    if (liveStatus) {
+      assertBrokerModeMatches(liveStatus, mode);
       return socketPath;
     }
     if (!tryAcquireStartLock(startLockFile)) {
@@ -229,10 +258,12 @@ export async function ensureBroker(workspaceRoot, { permissionMode = "workspace-
     try {
       // Double-check under the lock: a broker may have come up between the
       // status probe above and lock acquisition.
-      if (await getBrokerStatus(workspaceRoot)) {
+      const racedStatus = await getBrokerStatus(workspaceRoot);
+      if (racedStatus) {
+        assertBrokerModeMatches(racedStatus, mode);
         return socketPath;
       }
-      spawnBrokerDaemon(workspaceRoot, { socketPath, permissionMode, provider, model });
+      spawnBrokerDaemon(workspaceRoot, { socketPath, permissionMode, provider, model, mode });
       while (Date.now() < deadline) {
         if (await getBrokerStatus(workspaceRoot)) {
           return socketPath;

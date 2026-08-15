@@ -19,9 +19,12 @@ export function renderCheckReport(report) {
   }
   lines.push(
     `${statusIcon(report.auth.ok)} credentials — ${report.auth.detail}`,
-    `${statusIcon(report.profile.ready)} cc profile — ${report.profile.detail}`,
-    `${statusIcon(true)} broker — ${report.broker.detail}`
+    `${statusIcon(report.profile.ready)} cc profile — ${report.profile.detail}`
   );
+  if (report.mode) {
+    lines.push(`${statusIcon(report.mode.ok)} mode — ${report.mode.detail}`);
+  }
+  lines.push(`${statusIcon(true)} broker — ${report.broker.detail}`);
   if (report.actionsTaken?.length) {
     lines.push("", "Actions taken:");
     for (const action of report.actionsTaken) {
@@ -123,7 +126,7 @@ export function renderNativeReviewResult({ status, stdout, stderr }, { reviewLab
 }
 
 /** Render a delegate/run result. */
-export function renderTaskResult({ rawOutput, failureMessage }, { title, jobId, write, dshSessionId }) {
+export function renderTaskResult({ rawOutput, failureMessage }, { title, jobId, write, agentMode, dshSessionId }) {
   const lines = [];
   if (failureMessage) {
     lines.push(`${title} failed.`, failureMessage.trim());
@@ -137,7 +140,13 @@ export function renderTaskResult({ rawOutput, failureMessage }, { title, jobId, 
   if (dshSessionId) {
     footer.push(`dsh session: ${dshSessionId} (continue with /dsh:run --resume)`);
   }
-  footer.push(write ? "mode: workspace-write" : "mode: read-only");
+  // Two orthogonal facts, labeled apart: `agent mode` is the composed
+  // toolset (minimal|standard), `sandbox` the permission boundary — one
+  // ambiguous `mode:` key would conflate them.
+  if (agentMode) {
+    footer.push(`agent mode: ${agentMode}`);
+  }
+  footer.push(write ? "sandbox: workspace-write" : "sandbox: read-only");
   lines.push("", `— ${footer.join(" · ")}`);
   return `${lines.join("\n")}\n`;
 }
