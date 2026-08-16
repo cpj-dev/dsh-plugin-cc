@@ -39,8 +39,8 @@ In a scratch git repo with the plugin installed:
 8. `/dsh:import` → digest acknowledged; `/dsh:run --resume` continues with the imported context.
 9. `/dsh:stop --broker` → broker gone; a later `--resume` errors explicitly ("no live broker holds it"), and after a new `--session` run the old session stays unreachable — never a silent fresh session reported as a resume.
 10. Kill Claude Code mid-background-run → worker survives; a new session's `/dsh:runs --all` still finds it.
-11. `/dsh:run "name every tool you can call"` → the answer names only bash and `str_replace_editor` (minimal default); the same prompt with `--mode standard` names the full toolset (file/web search, skills, subagents).
-12. `/dsh:run --session "hi"` on a fresh workspace, then `/dsh:run --session --mode standard "hi"` → explicit mode-mismatch error naming `/dsh:stop --broker`; after stopping, the standard `--session` run works and `/dsh:check` shows the broker's mode.
+11. `/dsh:run "name every tool you can call"` → the answer names the full toolset (standard default: file/web search, skills, subagents). The same prompt with `--mode minimal` names only bash and `str_replace_editor`.
+12. `/dsh:run --session "hi"` on a fresh workspace, then `/dsh:run --session --mode minimal "hi"` → explicit mode-mismatch error naming `/dsh:stop --broker`; after stopping, the minimal `--session` run works and `/dsh:check` shows the broker's mode.
 13. Wire snapshot for `--mode anchored-standard` on a **new** session (set `DSH_CC_SNAPSHOT_FILE` or read session JSONL `request/header` — do not use `--dump-config` as a wire test):
     - First assemble: `systemTexts` is the one RL sentence (`You are a helpful software engineer assistant.`), `contextSourceKinds` is empty, `toolNames` is `bash` + `str_replace_editor`.
     - After the first tool call, the **next** header shows the full dsh-base catalog.

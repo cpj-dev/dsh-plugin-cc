@@ -532,8 +532,8 @@ async function handleSetup(argv) {
 
   if (options.mode) {
     // Persist the machine default; per-run --mode still overrides it. The
-    // built-in default is minimal (dsh shows better overall capability
-    // there), so this is how a machine opts back into standard.
+    // built-in default is standard (full catalog, no overlay). This is how
+    // a machine opts into minimal or anchored-standard without a per-run flag.
     const defaultMode = normalizeMode(options.mode);
     writePluginConfig({ defaultMode });
     actionsTaken.push(`Set the default agent mode for this machine to ${defaultMode}.`);

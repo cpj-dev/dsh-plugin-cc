@@ -8,11 +8,17 @@
 
 ## Agent 模式
 
-三种 Agent 模式。解析顺序：每次运行的 `--mode minimal|standard|anchored-standard` > 环境变量 `DSH_CC_MODE` > `/dsh:setup --mode <m>` 持久化的机器默认 > 内置 `minimal`。一次性运行按次选模式；broker（`--session`/`--resume`/`import`）在进程启动时组合模式并保持不变——请求解析出的模式与活 broker 不一致时会报错并提示 `/dsh:stop --broker`（停止会丢弃内存中的会话）。`--resume --mode` 会被忽略。继承的 `DSH_TOOLS_MODE` 会从每次 dsh spawn 的环境中剥除——模式的所有权归 `--mode`。组合的模式事后可观测：run/review/critique 的 JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组合的模式，而非请求值），渲染的任务 footer 把两个正交事实分开标注——`agent mode: minimal · sandbox: read-only`。
+| 模式 | 默认？ | 模型看到什么 |
+|---|---|---|
+| `standard` | **是** | 从请求 #1 起完整 dsh-base 目录。不加 mode overlay。 |
+| `minimal` | 否 | 全程仅 bash + `str_replace_editor`。额外工具在组合层关掉，后面不会出现。 |
+| `anchored-standard` | 否 | 同一 session 出现耐久的 `tool/call` 或 `assistant/message` 之前仍是两件套；下一次 assemble 恢复完整目录。registry 保持挂载——这是过滤器，不是再试一次。 |
 
-- **minimal**（默认）：全程两工具。覆盖层设置 RL persona（`You are a helpful software engineer assistant.`），关闭 `includeHarnessIdentity` 与 `includeRuntimeContext`，禁用其余 dsh-base 工具/提示行，只留 bash + `str_replace_editor`，并插入与 `anchored-standard` 相同的 `lib/tool-bootstrap.mjs`，把 assemble 段收成一句 `complete: true` persona（headless/cc 不能挂 `dsh-persona`）。额外工具在组合层就被关掉，因此晋升不会拓宽目录。沙箱文件系统栈、一次性 bash 和上下文压缩保持组合；bash 的 `run_in_background` 参数一并移除。
-- **standard**：不加 mode overlay，从请求 #1 起就是完整工具集（文件/网页检索、skills、子代理、plan/goal）。
-- **anchored-standard**：完整 registry 保持挂载。覆盖层使用与 `minimal` 相同的 persona / runtime-context 标志，并插入 `lib/tool-bootstrap.mjs`：在同一 session 出现耐久的 `tool/call` 或 `assistant/message` 之前，模型可见目录只有两件套，并剥掉 `agent-instructions` / `skill-catalog`；下一次 assemble 恢复完整目录和这些注入。未晋升时执行隐藏工具会被拒绝。这是过滤器状态机，不是再试一次。不切换官方 PTY bash 或 `dsh-fs-local`。可选 `DSH_CC_SNAPSHOT_FILE` 会按 assemble 追加 JSONL 快照。
+解析顺序：每次运行的 `--mode` > 环境变量 `DSH_CC_MODE` > `/dsh:setup --mode <m>` > 内置 `standard`。一次性运行按次选模式。broker（`--session`/`--resume`/`import`）在启动时组合模式并保持不变——不一致时报错并提示 `/dsh:stop --broker`（停止会丢弃内存会话）。`--resume --mode` 会被忽略。继承的 `DSH_TOOLS_MODE` 会从每次 dsh spawn 中剥除。
+
+JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组合的模式）。任务 footer 把两个正交事实分开：`agent mode: standard · sandbox: read-only`。
+
+`minimal` 与 `anchored-standard` 都会收紧 persona（关闭 `includeHarnessIdentity` / `includeRuntimeContext`），并插入 `lib/tool-bootstrap.mjs`，把 assemble 段收成一句 `complete: true` RL sentence（headless/cc 不能挂 `dsh-persona`）。`minimal` 还会禁用其余 dsh-base 工具行，并关掉 bash `run_in_background`。`anchored-standard` 在晋升前会拒绝执行隐藏工具，并剥掉 `agent-instructions` / `skill-catalog`。可选 `DSH_CC_SNAPSHOT_FILE` 按 assemble 追加 JSONL 快照。两种切换模式都不会改用官方 PTY bash 或 `dsh-fs-local`。
 
 ## `/dsh:check` → `check`
 
@@ -36,7 +42,7 @@
 | `--base <ref>` | 相对指定 ref 审查分支；默认自动检测远端 HEAD、`main` 或 `master` |
 | `--scope auto\|working-tree\|branch` | 目标范围；`auto` 优先审查未提交改动 |
 | `--model <name>`、`--effort low\|medium\|high\|max` | 本次运行的模型配置 |
-| `--mode minimal\|standard\|anchored-standard` | 本次运行的 Agent 模式（默认 `minimal`；见上文「Agent 模式」） |
+| `--mode minimal\|standard\|anchored-standard` | 本次运行的 Agent 模式（默认 `standard`；见上文「Agent 模式」） |
 | `--background` | 后台排队并返回 run ID；`--wait` 强制前台等待 |
 
 两者都在只读沙箱中一次性执行。`review` 返回自由文本；`critique` 使用 JSON schema 约束结构化 finding，并在模型不满足格式时回退为原始文本。
@@ -53,7 +59,7 @@
 | `--resume`、`--resume-last` | 恢复最近的 dsh 会话；会校验当前 broker runtime generation，broker 已停止或重启时明确报错，不会静默创建新会话 |
 | `--fresh` | 强制走一次性运行路径 |
 | `--model`、`--effort` | 仅用于一次性运行；恢复会话沿用 broker 启动配置 |
-| `--mode minimal\|standard\|anchored-standard` | Agent 模式（默认 `minimal`；见上文「Agent 模式」）。`--session` 解析出的模式与活 broker 不一致时报错；恢复会话沿用 broker 启动模式 |
+| `--mode minimal\|standard\|anchored-standard` | Agent 模式（默认 `standard`；见上文「Agent 模式」）。`--session` 解析出的模式与活 broker 不一致时报错；恢复会话沿用 broker 启动模式 |
 | `--background` | 分离到后台执行并返回 run ID |
 | `--timeout-ms <n>` | broker 单轮超时，默认 20 分钟；必须为正整数，并会转发到 broker |
 

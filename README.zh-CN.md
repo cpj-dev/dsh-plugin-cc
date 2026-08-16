@@ -5,81 +5,92 @@
 [![测试](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml/badge.svg)](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml)
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-一个连接 Claude Code 与 **DeepSeek Harness**（`dsh`）的插件市场项目。它提供代码审查、对抗式设计评审、任务委派、后台运行，以及可恢复的多轮 dsh 会话。
+Claude Code 插件：用斜杠命令跑 **DeepSeek Harness**（`dsh`）——代码审查、对抗式评审、一次性任务、可恢复多轮会话。
 
-本项目基于 [`@deepseek-ai/dsh@0.1.0-rc.6`](https://www.npmjs.com/package/@deepseek-ai/dsh) 开发（开发者预览；本插件需要的 SDK JSON-RPC server 已单独发布为 [`@deepseek-ai/dsh-sdk-jsonrpc-server`](https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-jsonrpc-server)，不在 CLI 依赖闭包里）。依赖的具体行为记录在 [DSH 兼容性契约](docs/dsh-compat.md) 中；升级 dsh 前必须重新验证。
+Pin：[`@deepseek-ai/dsh@0.1.0-rc.6`](https://www.npmjs.com/package/@deepseek-ai/dsh)。升级 dsh 时重新核对 [docs/dsh-compat.md](docs/dsh-compat.md)。英文文档是技术事实的权威版本；命令名、参数、环境变量、路径和 JSON 字段保持英文。
 
-> 英文文档是技术事实的权威版本。中文文档覆盖安装、命令、排障、贡献和安全流程；命令名、参数、环境变量、路径和 JSON 字段保持英文，以确保兼容性。
+## Agent 模式
+
+默认是 **`standard`**。`minimal` 和 `anchored-standard` 是切换项，不是默认。
+
+| 模式 | 模型看到的工具 |
+|---|---|
+| **`standard`**（默认） | 从请求 #1 起完整 dsh-base 目录（检索、skills、子代理……）。不加 overlay。 |
+| `minimal` | **全程**仅 bash + `str_replace_editor`。额外工具后面不会出现。 |
+| `anchored-standard` | 先两件套。该 session 出现工具调用 **或** 助手回复后，下一次 assemble 恢复完整目录。 |
+
+切换：
+
+- 本次运行：`/dsh:run --mode minimal …` 或 `--mode anchored-standard`
+- 当前 shell：`DSH_CC_MODE=minimal`
+- 本机默认：`/dsh:setup --mode minimal`
+
+broker（`--session` / `--resume` / `/dsh:import`）沿用启动时的模式。不一致 → `/dsh:stop --broker`。
 
 ## 快速开始
 
-插件命令需要 Node >= 20 和 `DEEPSEEK_API_KEY`。通过 `/dsh:setup` 安装 dsh 还需要 Node >= 22.19（Harness 下限）、`npm`，以及 `pnpm`（`corepack enable`），因为 `dsh plugin add` 会转发给 pnpm。
+需要 Node >= 20 和 `DEEPSEEK_API_KEY`。`/dsh:setup` 还需要 Node >= 22.19、`npm`、`pnpm`（`corepack enable`）。
 
 ```bash
-# 1. 安装插件
 /plugin marketplace add cpj-dev/dsh-plugin-cc
 /plugin install dsh@deepseek-dsh
-
-# 2. 首次执行一键安装
-#    从 npm 安装 @deepseek-ai/dsh@0.1.0-rc.6，并把 SDK JSON-RPC server
-#    （及其 peers）加入多轮 cc profile
 /dsh:setup
-
-# 3. 在任意 Git 仓库中检查并审查
-/dsh:check
 /dsh:review
 ```
 
-已有**已构建**的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录时，可运行 `/dsh:setup --harness <path>`（目录必须已经执行过 `pnpm install` 和 `pnpm run build:lib`）。之后再跑无参数的 `/dsh:setup` 会迁移到 npm pin；要继续用源码目录需再次传入 `--harness`。已有可执行的 `dsh` 时，可通过 `DSH_BINARY` 指定；普通 `/dsh:setup` 仍会从固定版本的 npm 包装入 `cc` profile。卸载：删除插件、插件数据目录（npm prefix 在其中）以及 `~/.dsh/profiles/cc`。
+已有构建好的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码目录：`/dsh:setup --harness <path>`。已有 `dsh` 可执行文件：设 `DSH_BINARY`。卸载：删插件、插件数据目录、`~/.dsh/profiles/cc`。
 
 ## 命令
 
-| 命令 | 作用 | 是否需要 setup |
-|---|---|---|
-| `/dsh:check` | 检查 dsh、npm pin / 源码检出、凭据、profile 和 broker | 否 |
-| `/dsh:setup` | 安装/链接固定版本的 npm CLI（或 `--harness <已构建源码目录>`），并创建多轮 `cc` profile | — |
-| `/dsh:review [focus]` | 以只读模式审查本地改动 | 否 |
-| `/dsh:critique [focus]` | 执行结构化对抗式设计评审 | 否 |
-| `/dsh:run <task>` | 执行一次性或可恢复任务 | `--session`/`--resume` 需要 |
-| `/dsh:delegate <task>` | 在后台委派任务 | 否 |
-| `/dsh:import` | 将当前对话摘要导入可恢复会话 | 是 |
-| `/dsh:runs [id]` | 列出运行或查看状态 | 否 |
-| `/dsh:show [id]` | 查看已完成运行的结果 | 否 |
-| `/dsh:stop [id]` / `--broker` | 停止运行进程树或共享 broker | 否 |
+| 命令 | 作用 |
+|---|---|
+| `/dsh:check` | 就绪检查 |
+| `/dsh:setup` | 安装固定版本 npm CLI（或 `--harness`）并创建多轮 `cc` profile |
+| `/dsh:review [focus]` | 只读审查本地改动 |
+| `/dsh:critique [focus]` | 结构化对抗式评审 |
+| `/dsh:run <task>` | 执行任务（`--write`、`--session`、`--resume`、`--mode`、`--background`） |
+| `/dsh:delegate <task>` | 后台委派 |
+| `/dsh:import` | 把当前对话弱导入可恢复 dsh 会话 |
+| `/dsh:runs` / `/dsh:show` | 列出运行 / 回放结果 |
+| `/dsh:stop` / `--broker` | 停止运行 / 共享 broker |
 
-运行默认使用 **minimal** Agent 模式（一句话 persona，仅 bash + `str_replace_editor`，全程两工具）。`--mode standard` 从请求 #1 起使用完整工具集。`--mode anchored-standard` 保持完整 registry 挂载，但在该 session 出现工具调用或助手回复之前只向模型暴露两件套，随后恢复完整目录。用 `/dsh:setup --mode <m>` 持久化本机默认。
+完整参数：[docs/zh-CN/commands.md](docs/zh-CN/commands.md)。排障：[docs/zh-CN/troubleshooting.md](docs/zh-CN/troubleshooting.md)。
 
-完整参数见[中文命令参考](docs/zh-CN/commands.md)，安装和运行问题见[中文排障指南](docs/zh-CN/troubleshooting.md)。
+## 给 Agent
 
-## 文档
+按这个顺序读，能动手就停。
 
-- [中文文档索引](docs/zh-CN/README.md)
-- [英文完整文档索引](docs/README.md)
-- [架构设计（英文）](docs/architecture.md)
-- [DSH 兼容性契约（英文）](docs/dsh-compat.md)
-- [开发与测试（英文）](docs/development.md)
+1. 本 README（模式 + 命令）
+2. [docs/commands.md](docs/commands.md) — 参数（英文权威）
+3. [plugins/dsh/skills/dsh-delegate-runtime/SKILL.md](plugins/dsh/skills/dsh-delegate-runtime/SKILL.md) — 如何调用 bridge
+4. [docs/dsh-compat.md](docs/dsh-compat.md) — DSH pin；升级时重验
+5. [NOTICE](NOTICE) — 第三方许可证（法律文本不翻译、不复述）
 
-## 已知限制
+入口：`plugins/dsh/scripts/dsh-bridge.mjs`（一个能力一个子命令；stdout 给用户）。DSH argv 与 overlay：`plugins/dsh/scripts/lib/dsh.mjs`。Broker：`plugins/dsh/scripts/dsh-broker.mjs` —— 由 bridge 按需启动，**不要手动启动**。测试：`npm test`（假 dsh，不需要 API key）。
 
-- 不支持运行中的交互式审批；权限在启动前通过 `--write` 确定。
-- 只有 broker 支持的运行（`--session`、`--resume`、`/dsh:import`）可恢复，而且会话仅在对应 broker 进程存活期间有效。
-- DSH SDK 没有单轮取消接口；停止 broker 中的任务会终止 broker，并丢失该工作区的内存会话。
-- `/dsh:import` 导入的是压缩文本摘要，不是原生历史回放。
-- v1 仅支持 POSIX 系统，不支持 Windows。
+布局：`.claude-plugin/marketplace.json` · `plugins/dsh/commands/*.md` · `plugins/dsh/scripts/` · `docs/`。索引：[docs/zh-CN/README.md](docs/zh-CN/README.md)。
+
+## 已知限制（v1）
+
+- 不支持运行中交互审批；权限在启动前用 `--write` 决定。
+- 一次性运行不可恢复。只有 `--session` / `--resume` / `/dsh:import` 会记录 session id，且只在对应 broker 进程存活期间有效。
+- Stop = kill。SDK 没有单轮取消；停掉进行中的 broker 轮次会丢掉内存会话。
+- `/dsh:import` 是压缩文本摘要，不是原生历史回放。
+- v1 仅 POSIX，不支持 Windows。
 
 ## 社区与支持
 
-- 提交变更前阅读[贡献指南](CONTRIBUTING.zh-CN.md)。
-- 使用[支持说明](SUPPORT.zh-CN.md)确认支持范围和求助渠道。
-- 安全漏洞必须按[安全策略](SECURITY.zh-CN.md)私下报告。
-- 参与社区即表示同意遵守[行为准则](CODE_OF_CONDUCT.zh-CN.md)。
+- 提交前阅读[贡献指南](CONTRIBUTING.zh-CN.md)
+- [支持说明](SUPPORT.zh-CN.md)
+- 漏洞按[安全策略](SECURITY.zh-CN.md)私下报告
+- [行为准则](CODE_OF_CONDUCT.zh-CN.md)
 
 ## 致谢
 
-第三方版权、许可证与设计来源以英文 [NOTICE](NOTICE) 为准（法律文本不翻译）。摘要：
+第三方版权、许可证与设计来源以英文 [NOTICE](NOTICE) 为准。摘要：
 
-- 运行时：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT）。本插件只组合其公开 CLI 与 SDK，不内嵌 harness 源码。
-- 插件形态：[openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 与 [xai-org/grok-build-plugin-cc](https://github.com/xai-org/grok-build-plugin-cc)（均为 Apache-2.0）。仅架构借鉴，未复制源码。
+- 运行时：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT）。本插件只组合公开 CLI 与 SDK，不内嵌 harness 源码。
+- 插件形态：[openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 与 [xai-org/grok-build-plugin-cc](https://github.com/xai-org/grok-build-plugin-cc)（Apache-2.0）。仅架构借鉴，未复制源码。
 - `--mode anchored-standard`：从 [xiaobright/dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT）重实现 assemble 过滤 / 晋升协议，不是其 Web preset 的拷贝。首轮触发证据见 [xiaobright/modeltest](https://github.com/xiaobright/modeltest)（研究引用；引用时该仓库无 LICENSE 文件）。
 - [yjh051108/dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) 仅作对照阅读，**未接入**。
 
@@ -87,4 +98,4 @@
 
 ## 许可证
 
-本项目采用 MIT 许可证，见 [LICENSE](LICENSE)。再分发时须保留 LICENSE 与 NOTICE；法律文本仅以英文原文为准。
+MIT，见 [LICENSE](LICENSE)。再分发须保留 LICENSE 与 NOTICE；法律文本以英文原文为准。

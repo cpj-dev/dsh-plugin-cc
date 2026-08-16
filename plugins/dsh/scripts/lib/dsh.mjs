@@ -19,14 +19,15 @@
  * - Model/effort selection is a generated `--patch` overlay replacing the
  *   `agent-default-model` and `llm-deepseek` rows; `--patch` is the last
  *   composition layer, so it wins over profile and home patches.
- * - Mode selection (minimal | standard | anchored-standard) is a generated
- *   `--patch` overlay too. `minimal` (the default) disables the dsh-base
- *   tool/prompt rows down to bash + str_replace_editor, tightens the
- *   persona, and inserts lib/tool-bootstrap.mjs so assemble sections collapse
- *   to one complete:true RL sentence (dsh-persona cannot mount on headless/cc).
- *   Extra tools stay uncomposed, so the plugin's later promotion cannot widen
- *   the catalog. `standard` applies no overlay. `anchored-standard` keeps the
- *   full registry mounted and inserts the same plugin, which filters the
+ * - Mode selection (standard | minimal | anchored-standard) is a generated
+ *   `--patch` overlay too. `standard` (the default) applies no overlay —
+ *   the full dsh-base catalog from request #1. `minimal` disables the
+ *   dsh-base tool/prompt rows down to bash + str_replace_editor, tightens
+ *   the persona, and inserts lib/tool-bootstrap.mjs so assemble sections
+ *   collapse to one complete:true RL sentence (dsh-persona cannot mount on
+ *   headless/cc). Extra tools stay uncomposed, so the plugin's later
+ *   promotion cannot widen the catalog. `anchored-standard` keeps the full
+ *   registry mounted and inserts the same plugin, which filters the
  *   model-visible catalog to the Minimal pair until the session records a
  *   durable tool/call or assistant/message, then restores the assembled
  *   catalog. The disabled row ids (minimal) and the bootstrap plugin must be
@@ -64,8 +65,8 @@ const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
 const PERMISSION_MODE_ENV = "DSH_PERMISSION_MODE";
 const VALID_PERMISSION_MODES = new Set(["read-only", "workspace-write", "danger-full-access"]);
 const VALID_EFFORTS = new Set(["low", "medium", "high", "max"]);
-/** User-facing agent modes. `DEFAULT_MODE` stays `minimal` until A/B says otherwise. */
-export const SUPPORTED_MODES = ["minimal", "standard", "anchored-standard"];
+/** User-facing agent modes. Built-in default is `standard`; the others are opt-in. */
+export const SUPPORTED_MODES = ["standard", "minimal", "anchored-standard"];
 const VALID_MODES = new Set(SUPPORTED_MODES);
 const MODE_ENV = "DSH_CC_MODE";
 const ANCHORED_MODE = "anchored-standard";
@@ -74,12 +75,11 @@ const BOOTSTRAP_PLUGIN_FILES = ["tool-bootstrap.mjs", "request-snapshot.mjs"];
 const TOOLS_MODE_ENV = "DSH_TOOLS_MODE";
 
 /**
- * Plugin-wide default agent mode. dsh shows better overall capability in
- * minimal mode, so every run and broker spawn defaults to it; `standard`
- * (the full dsh-base toolset) and `anchored-standard` (Minimal first
- * request, then the full assembled catalog) stay one `--mode` away.
+ * Plugin-wide default agent mode: untouched dsh-base catalog from request #1.
+ * `minimal` (two tools for the whole run) and `anchored-standard` (Minimal
+ * first request, then the full assembled catalog) are `--mode` switches.
  */
-export const DEFAULT_MODE = "minimal";
+export const DEFAULT_MODE = "standard";
 
 /**
  * Plugin-wide default model selection, applied whenever a run does not pass
@@ -431,7 +431,7 @@ export function resolveMode({ flag = null, env = process.env, config = null } = 
   return DEFAULT_MODE;
 }
 
-/** "minimal, standard, or anchored-standard" for errors and check next-steps. */
+/** "standard, minimal, or anchored-standard" for errors and check next-steps. */
 export function formatSupportedModes() {
   if (SUPPORTED_MODES.length === 1) {
     return SUPPORTED_MODES[0];

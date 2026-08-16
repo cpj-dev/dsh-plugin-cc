@@ -40,14 +40,14 @@ test("resume lifecycle: continuity while live, explicit refusal once the broker 
       const first = runBridge(["run", "hello", "--session", "--cwd", workspace]);
       assert.equal(first.status, 0, first.stderr);
       assert.match(first.stdout, /turn 1: hello/);
-      // The footer reports the mode the broker actually composed (minimal
+      // The footer reports the mode the broker actually composed (standard
       // default here), not this request's resolution.
-      assert.match(first.stdout, /agent mode: minimal · sandbox: read-only/);
+      assert.match(first.stdout, /agent mode: standard · sandbox: read-only/);
       const firstJob = listJobs(workspace)[0];
       assert.equal(firstJob.status, "completed");
       assert.ok(firstJob.dshSessionId, "completed session run records its session id");
       assert.ok(firstJob.dshSessionGeneration, "completed session run records the runtime generation");
-      assert.equal(firstJob.result?.payload?.agentMode, "minimal", "the terminal record carries the broker's agent mode");
+      assert.equal(firstJob.result?.payload?.agentMode, "standard", "the terminal record carries the broker's agent mode");
 
       // Resume continues the same in-memory session (turn 2, not turn 1).
       const second = runBridge(["run", "again", "--resume", "--cwd", workspace]);

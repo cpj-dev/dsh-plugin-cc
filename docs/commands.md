@@ -6,11 +6,17 @@ Every `/dsh:*` command maps to one `dsh-bridge.mjs` subcommand; the markdown fil
 
 ## Agent mode
 
-Three modes. Resolution order: per-run `--mode minimal|standard|anchored-standard` > `DSH_CC_MODE` env > the machine default persisted by `/dsh:setup --mode <m>` > built-in `minimal`. One-shot runs pick their mode per run; a broker (`--session`/`--resume`/`import`) composes its mode at spawn and keeps it — a run resolving a different mode than the live broker errors and names `/dsh:stop --broker` (stopping discards in-memory sessions). `--resume --mode` is ignored. Inherited `DSH_TOOLS_MODE` is stripped from every dsh spawn — mode ownership belongs to `--mode`. The composed mode is observable after the fact: run/review/critique JSON payloads carry `agentMode` (broker-backed runs report the broker's composed mode, not the request's), and the rendered task footer labels the two orthogonal facts apart — `agent mode: minimal · sandbox: read-only`.
+| Mode | Default? | What the model sees |
+|---|---|---|
+| `standard` | **yes** | Full dsh-base catalog from request #1. No mode overlay. |
+| `minimal` | no | bash + `str_replace_editor` for the whole run. Extra tools stay uncomposed, so they cannot appear later. |
+| `anchored-standard` | no | Same two tools until **this session** records a durable `tool/call` or `assistant/message`; the next assemble restores the full catalog. The registry stays mounted — this is a filter, not a retry. |
 
-- **minimal** (default): dsh shows better overall capability here on locked two-tool runs. The overlay sets the RL persona (`You are a helpful software engineer assistant.`), sets `includeHarnessIdentity: false` and `includeRuntimeContext: false`, disables the rest of the dsh-base tool/prompt rows so the model only has bash + `str_replace_editor` for the whole run, and inserts the same [`lib/tool-bootstrap.mjs`](../plugins/dsh/scripts/lib/tool-bootstrap.mjs) used by `anchored-standard` so assemble sections become one `complete: true` sentence (`dsh-persona` cannot mount on headless/cc). Extra tools stay uncomposed, so promotion cannot widen the catalog. The sandboxed filesystem stack, one-shot bash, and context compaction stay composed; bash's `run_in_background` parameter is removed because the job tools that collect a background job are disabled with the rest of the toolset.
-- **standard**: no mode overlay — the untouched full toolset (file search, web search, skills, subagents, plan/goal tools) from request #1.
-- **anchored-standard**: the full dsh-base registry stays mounted. The overlay uses the same persona/runtime-context flags as `minimal` and inserts [`lib/tool-bootstrap.mjs`](../plugins/dsh/scripts/lib/tool-bootstrap.mjs). That plugin filters the *model-visible* catalog to bash + `str_replace_editor` and strips `agent-instructions` / `skill-catalog` injections until the **same session** records a durable `tool/call` or `assistant/message` (`promoteOn: either`); the next assemble restores the full catalog and those injections. Hidden tools are rejected at execute time while unpromoted. This is a filter, not a retry: promotion is a session state machine, not a second attempt to see if the model “enters” a mode. It does **not** switch to official PTY bash or `dsh-fs-local` (those would change the sandbox boundary). Optional `DSH_CC_SNAPSHOT_FILE` appends one JSONL snapshot per assemble (system texts, tool names, schema hashes, context source kinds).
+Resolution: per-run `--mode` > `DSH_CC_MODE` > `/dsh:setup --mode <m>` > built-in `standard`. One-shot runs pick a mode per run. A broker (`--session`/`--resume`/`import`) composes its mode at spawn and keeps it — a mismatch errors and names `/dsh:stop --broker` (stopping discards in-memory sessions). `--resume --mode` is ignored. Inherited `DSH_TOOLS_MODE` is stripped from every dsh spawn.
+
+JSON payloads carry `agentMode` (broker-backed runs report the broker's composed mode). The task footer splits the two orthogonal facts: `agent mode: standard · sandbox: read-only`.
+
+`minimal` and `anchored-standard` both tighten the persona (`includeHarnessIdentity` / `includeRuntimeContext` off) and insert [`lib/tool-bootstrap.mjs`](../plugins/dsh/scripts/lib/tool-bootstrap.mjs) so assemble sections become one `complete: true` RL sentence (`dsh-persona` cannot mount on headless/cc). `minimal` also disables the rest of the dsh-base tool rows and turns off bash `run_in_background` (job tools are gone). `anchored-standard` rejects hidden tools at execute time until promoted, and strips `agent-instructions` / `skill-catalog` until then. Optional `DSH_CC_SNAPSHOT_FILE` appends one JSONL snapshot per assemble. Neither mode switches to official PTY bash or `dsh-fs-local`.
 
 ## `/dsh:check` → `check`
 
@@ -34,7 +40,7 @@ Readiness probe: node, the `dsh` binary (resolution: `DSH_BINARY` env → persis
 | `--base <ref>` | branch review against this ref (default: detected origin HEAD / main / master) |
 | `--scope auto\|working-tree\|branch` | target selection; `auto` prefers a dirty working tree |
 | `--model <name>`, `--effort low\|medium\|high\|max` | per-run model overlay |
-| `--mode minimal\|standard\|anchored-standard` | per-run agent mode (default `minimal`; see "Agent mode") |
+| `--mode minimal\|standard\|anchored-standard` | per-run agent mode (default `standard`; see "Agent mode") |
 | `--background` | queue and return a run id; `--wait` forces foreground |
 
 Both run one-shot headless with the read-only sandbox. `review` returns free-form review text; `critique` uses the adversarial prompt plus `schemas/review-output.schema.json` and renders parsed findings (falling back to raw text when the model breaks the JSON contract).
@@ -51,7 +57,7 @@ A nonexistent `--base` errors up front ("Unknown base ref"), before any backgrou
 | `--resume`, `--resume-last` | continue the latest recorded dsh session (empty prompt = "continue"); validated against the live broker's runtime generation — a stopped or restarted broker/runtime yields an explicit error, never a silent fresh session |
 | `--fresh` | force the one-shot path |
 | `--model`, `--effort` | one-shot runs only; a resume keeps the broker's startup model |
-| `--mode minimal\|standard\|anchored-standard` | agent mode (default `minimal`; see "Agent mode"). A `--session` run resolving a different mode than the live broker errors; a resume keeps the broker's startup mode |
+| `--mode minimal\|standard\|anchored-standard` | agent mode (default `standard`; see "Agent mode"). A `--session` run resolving a different mode than the live broker errors; a resume keeps the broker's startup mode |
 | `--background` | detached execution, returns a run id |
 | `--timeout-ms <n>` | broker-run turn timeout, forwarded to the broker so it frees itself on expiry (default 20 minutes; must be a positive integer, rejected otherwise) |
 
