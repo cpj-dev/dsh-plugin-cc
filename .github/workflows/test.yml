@@ -20,3 +20,45 @@ jobs:
           node-version: ${{ matrix.node }}
       # Zero dependencies by design: no install step, no lockfile, no network.
       - run: npm test
+
+  # Claude Code keys a plugin's install directory by the manifest version and
+  # records it in installed_plugins.json, so shipping plugin code without a
+  # bump leaves every user on an install that claims to be the previous
+  # release. tests/version.test.mjs keeps the four manifests in step offline;
+  # this job is the part that needs the base branch to compare against.
+  version:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a version bump for shipped plugin changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          manifest=plugins/dsh/.claude-plugin/plugin.json
+          if git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- plugins .claude-plugin; then
+            echo "No shipped plugin files changed; no bump required."
+            exit 0
+          fi
+          head_version=$(node -p "require('./$manifest').version")
+          base_version=$(git show "$BASE_SHA:$manifest" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          echo "base $base_version -> head $head_version"
+          if [ "$head_version" = "$base_version" ]; then
+            echo "::error file=$manifest::This pull request changes shipped plugin files but leaves the version at $base_version. Bump plugin.json, marketplace.json (x2), and package.json, and add the CHANGELOG entry."
+            exit 1
+          fi
+          node -e '
+            const [base, head] = process.argv.slice(1);
+            const parse = (v) => v.split("-")[0].split(".").map(Number);
+            const [b, h] = [parse(base), parse(head)];
+            for (let i = 0; i < 3; i += 1) {
+              if (h[i] > b[i]) process.exit(0);
+              if (h[i] < b[i]) break;
+            }
+            console.error(`::error::Version ${head} does not sort above the base version ${base}.`);
+            process.exit(1);
+          ' "$base_version" "$head_version"

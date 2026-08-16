@@ -13,7 +13,8 @@
 1. 修改前后均保持 `npm test` 通过；测试纯 Node 运行且不访问网络。
 2. 行为和文档在同一个提交中更新；缺少文档的行为变更不完整。
 3. 不增加 npm 依赖。需要大型依赖的能力通常应由 DeepSeek Harness 提供。
-4. 第三方代码、机制移植和研究来源须在同一提交中写入 [NOTICE](NOTICE)。正确标注许可证（不要默认写成 MIT）。若复制了实质性代码，须保留其版权声明。仅架构借鉴也要在 NOTICE 中写明项目、许可证和 URL。只阅读过的项目不要当成依赖引入。
+4. 凡改动 `plugins/` 或 `.claude-plugin/` 下随插件分发的文件，必须在同一个 Pull Request 中提升版本号（plugin.json、marketplace.json ×2、package.json），并把条目写在该版本的 [CHANGELOG](CHANGELOG.md) 标题之下。`main` 就是分发渠道，Claude Code 按这个版本号决定插件的安装目录，因此不提版本号的改动会顶着上一个版本的名义发出去。不保留 `Unreleased` 区块；CI 会同时校验这两项。
+5. 第三方代码、机制移植和研究来源须在同一提交中写入 [NOTICE](NOTICE)。正确标注许可证（不要默认写成 MIT）。若复制了实质性代码，须保留其版权声明。仅架构借鉴也要在 NOTICE 中写明项目、许可证和 URL。只阅读过的项目不要当成依赖引入。
 
 ## 开始修改前
 

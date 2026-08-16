@@ -6,11 +6,16 @@ function statusIcon(ok) {
 
 /** Render the `check` / `setup` readiness report. */
 export function renderCheckReport(report) {
-  const lines = [
-    `DeepSeek Harness bridge readiness: ${report.ready ? "ready" : "not ready"}`,
+  const lines = [`DeepSeek Harness bridge readiness: ${report.ready ? "ready" : "not ready"}`];
+  // First row on purpose: a bug report that quotes this block should name the
+  // plugin build before anything it says about the environment.
+  if (report.plugin) {
+    lines.push(`${statusIcon(report.plugin.ok)} plugin — ${report.plugin.detail}`);
+  }
+  lines.push(
     `${statusIcon(report.node.available)} node — ${report.node.detail}`,
     `${statusIcon(report.dsh.available)} dsh — ${report.dsh.detail}`
-  ];
+  );
   if (report.npm) {
     lines.push(`${statusIcon(report.npm.ok)} npm pin — ${report.npm.detail}`);
   }

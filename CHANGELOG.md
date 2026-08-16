@@ -1,10 +1,26 @@
 # Changelog
 
-## Unreleased
+Every change that ships anything under `plugins/` carries a version bump in the
+same pull request. Claude Code keys a plugin's install directory by the manifest
+version (`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`) and records
+it in `installed_plugins.json`, so a version that never moves makes every build
+since the last bump indistinguishable to a user reading `/plugin` or filing a bug.
+`tests/version.test.mjs` and the `version` CI job enforce it; there is no
+`Unreleased` section to accumulate in.
+
+## 2.0.0 (2026-08-17)
+
+Most of this release already reached users on `main` while the manifest still
+said `1.0.0`; it is collected under one version because that is the label an
+install can finally pin to. Major, not minor: `/dsh:setup --skip-build` is gone,
+`--harness` no longer builds a checkout, and the default agent mode and model
+selection both changed — breaking for anyone scripting against 1.0.0.
 
 ### Added
 
-- **`--mode anchored-standard`**: two-phase agent mode that keeps the full dsh-base tool registry mounted and filters the model-visible catalog to bash + `str_replace_editor` until that session records a durable `tool/call` or `assistant/message`, then restores the assembled catalog (and `agent-instructions` / `skill-catalog` injections). Built-in default stays `standard`; this mode is opt-in. The same bootstrap plugin is also inserted for `minimal` so assemble sections become one complete RL sentence (`ctx.systemPrompt.section({ complete: true })`); extra tools stay uncomposed there, so promotion cannot widen that catalog. Optional `DSH_CC_SNAPSHOT_FILE` records JSONL after `agent/pre-step` and again on session `request/header` (assemble-time empty context kinds are not a pass). Remaining wire delta vs official Web Minimal (persistent PTY bash, `dsh-fs-local`) is documented in `docs/dsh-compat.md` and is not a fourth mode.
+- `/dsh:check` (and `/dsh:setup`) report the plugin build as their first row — `✓ plugin — dsh 2.0.0` — so a pasted readiness block names the version a bug is against.
+- `tests/version.test.mjs`: `package.json`, `plugins/dsh/.claude-plugin/plugin.json`, and both `.claude-plugin/marketplace.json` versions must agree, be semver, and head the changelog. A `version` CI job additionally fails a pull request that changes `plugins/**` or `.claude-plugin/**` without raising the manifest version above the base branch's.
+- **`--mode anchored-standard`**: two-phase agent mode that keeps the full dsh-base tool registry mounted and filters the model-visible catalog to bash + `str_replace_editor` until that session records a durable `tool/call` or `assistant/message`, then restores the assembled catalog (and `agent-instructions` / `skill-catalog` injections). Built-in default stays `standard`; this mode is opt-in. The same bootstrap plugin is also inserted for `minimal` so assemble sections become one complete RL sentence (`ctx.systemPrompt.section({ complete: true })`); extra tools stay uncomposed there, so promotion cannot widen that catalog. Optional `DSH_CC_SNAPSHOT_FILE` records JSONL after `agent/pre-step` and once per step at `step/end` for the wire header (assemble-time empty context kinds are not a pass). Remaining wire delta vs official Web Minimal (persistent PTY bash, `dsh-fs-local`) is documented in `docs/dsh-compat.md` and is not a fourth mode.
 - [NOTICE](NOTICE) now records third-party copyrights and licenses for the runtime (DeepSeek Harness), architectural inspiration (Codex and Grok Claude Code plugins, Apache-2.0), the anchored-standard mechanism port (`xiaobright/dsh-anchored-standard`, MIT), research citations (`xiaobright/modeltest`), and related work reviewed but not incorporated (`yjh051108/dsh-routing-suite`).
 - English and Simplified Chinese entry points for setup, commands, troubleshooting, contribution, support, security, and community conduct, with bilingual command-palette descriptions.
 - GitHub community-health files: Contributor Covenant 2.1, structured bug/feature forms, and a bilingual pull-request checklist.
@@ -22,6 +38,8 @@
 
 ### Fixed
 
+- **`--mode minimal` and `--mode anchored-standard` no longer fail to boot.** Both modes insert the bootstrap plugin, and its mount-time persona registration probed `typeof ctx?.systemPrompt?.section !== "function"`. A Cordis context proxy *throws* on a service the accessing plugin did not inject, so the probe was the crash: every run in either mode died before the first request with `dsh: plugin tree failed to load: … cc-tool-bootstrap … cannot get property "systemPrompt" without inject` — one-shot, `--session`, review, and critique alike. The registration now runs inside `ctx.inject(["systemPrompt"], …)`, which scopes the dependency to that one effect: the assemble / pre-step / pre-execute filters still attach on a composition that has no prompt registry at all. The unit suite missed it because the fake Cordis ctx exposed `systemPrompt` as a plain property; it is now a proxy that throws exactly like the real one, and mounting against a registry-less composition is covered.
+- **`DSH_CC_SNAPSHOT_FILE` records one wire line per step.** rc.6 appends `request/header` only when the header changes (`reason: initial | resume | change`), so recording on that event alone left every steady-state step unrecorded — in `minimal`, where the catalog never changes after request #1, a whole run produced a single `source: "request"` line and the acceptance checklist had no per-step wire evidence to read. The last header snapshot is still that step's header, so the recorder keeps it per session and writes the wire line at `step/end`, after the step's header is known.
 - `npm test` no longer quotes the `tests/*.test.mjs` glob. Node 20's test runner does not expand globs, so CI on the Node 20 matrix looked for a literal filename and failed even though the suite exists.
 - Plain `/dsh:setup` repairs the `cc` profile when dsh is already available via `DSH_BINARY` or PATH: the CLI install is skipped, and the SDK JSON-RPC server is added from the pinned npm specs plus peers (no checkout required).
 - `/dsh:setup` re-adds the pinned SDK JSON-RPC server and peers when it refreshes a stale npm CLI pin. `--dump-config` only proves the package *name* is present, so a pin bump would otherwise leave the profile on the previous SDK-server/peer versions. The profile pin is stored as `sdkProfileVersion` (`npm:<pin>` or `harness:<realpath>`) and is written only after a successful `plugin add`, so a failed refresh is retried.
@@ -35,7 +53,7 @@
 - Minimal mode no longer advertises bash's `run_in_background` parameter. The job tools that collect a background job (`job_output`/`job_kill`) are disabled with the rest of the toolset, while the `jobs` service stays composed — so a background call would have spawned and returned a job id the model could neither read nor kill. The mode overlay now pins `enableRunInBackground: false` on `tool-bash`.
 - Bootstrap execute guard now freezes the assemble-time phase until session `step/end`. rc.6 persists `assistant/message` and the current `tool/call` before `tools/pre-execute`, so a live event-log scan let hidden tools through on the bootstrap response. Denial uses `{ kind: "deny", reason }` on `tools/pre-execute` only.
 - Bootstrap assemble filter registers with `{ prepend: true }` so later append listeners cannot re-widen request #1. Complete persona is registered via `ctx.systemPrompt.section({ complete: true })`; a `complete` flag on the waterfall return value is not honored by rc.6.
-- `DSH_CC_SNAPSHOT_FILE` now records after `agent/pre-step` and on `request/header`, so empty `contextSourceKinds` is no longer a false pass for the context strip. The recorder reads rc.6 `EpochHeader.config` (`model` / `maxTokens` / `reasoningEffort`) and starts a fresh pending bag on each assemble so a promoted pre-step cannot inherit the previous header's two tools.
+- `DSH_CC_SNAPSHOT_FILE` now records after `agent/pre-step` as well, so empty `contextSourceKinds` is no longer a false pass for the context strip. The recorder reads rc.6 `EpochHeader.config` (`model` / `maxTokens` / `reasoningEffort`) and starts a fresh pending bag on each assemble so a promoted pre-step cannot inherit the previous header's two tools.
 - [NOTICE](NOTICE) no longer labels the Codex and Grok Claude Code plugins as MIT. Both are Apache-2.0; this repository only used them as architectural inspiration and does not vendor their source.
 - `/dsh:check` reports `ready: false` and `multiTurnReady: false` when `DSH_CC_MODE` holds an unsupported value, with a corrective next step. Every command resolves the agent mode before launching, so a bad value makes both paths unusable — previously the summary still said ready while every run/review/critique exited with "Unsupported mode".
 - `/dsh:check` reports `ready: false` when the managed npm install it resolves to is off the verified pin. One-shot commands run that CLI, and DSH promises no compatibility between preview versions, so a stale pin is unsupported rather than merely outdated. A `DSH_BINARY`/PATH dsh is still the user's own and is not judged against the pin.
