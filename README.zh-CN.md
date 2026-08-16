@@ -74,6 +74,17 @@
 - 安全漏洞必须按[安全策略](SECURITY.zh-CN.md)私下报告。
 - 参与社区即表示同意遵守[行为准则](CODE_OF_CONDUCT.zh-CN.md)。
 
+## 致谢
+
+第三方版权、许可证与设计来源以英文 [NOTICE](NOTICE) 为准（法律文本不翻译）。摘要：
+
+- 运行时：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT）。本插件只组合其公开 CLI 与 SDK，不内嵌 harness 源码。
+- 插件形态：[openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) 与 [xai-org/grok-build-plugin-cc](https://github.com/xai-org/grok-build-plugin-cc)（均为 Apache-2.0）。仅架构借鉴，未复制源码。
+- `--mode anchored-standard`：从 [xiaobright/dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT）重实现 assemble 过滤 / 晋升协议，不是其 Web preset 的拷贝。首轮触发证据见 [xiaobright/modeltest](https://github.com/xiaobright/modeltest)（研究引用；引用时该仓库无 LICENSE 文件）。
+- [yjh051108/dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) 仅作对照阅读，**未接入**。
+
+本项目与上述作者或组织无隶属或背书关系。
+
 ## 许可证
 
-本项目采用 MIT 许可证，见 [LICENSE](LICENSE)。设计来源说明见 [NOTICE](NOTICE)；法律文本仅以英文原文为准。
+本项目采用 MIT 许可证，见 [LICENSE](LICENSE)。再分发时须保留 LICENSE 与 NOTICE；法律文本仅以英文原文为准。

@@ -1,6 +1,6 @@
 # Architecture
 
-The plugin is an external-CLI bridge, the same shape as the Codex and Grok Build Claude Code plugins: Claude Code slash commands run one Node script (`dsh-bridge.mjs`), and that script drives DeepSeek Harness. Nothing in this repo modifies DSH; every capability composes from DSH's public CLI and SDK wire protocol.
+The plugin is an external-CLI bridge, the same shape as the Codex and Grok Build Claude Code plugins: Claude Code slash commands run one Node script (`dsh-bridge.mjs`), and that script drives DeepSeek Harness. Nothing in this repo modifies DSH; every capability composes from DSH's public CLI and SDK wire protocol. Third-party copyrights and design provenance (including the anchored-standard mechanism port) are recorded in [NOTICE](../NOTICE).
 
 ## Two drive paths
 

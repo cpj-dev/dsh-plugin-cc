@@ -9,11 +9,22 @@
  * (typical of `/dsh:import`) still promotes on the next request, and two
  * broker sessions cannot unlock each other.
  *
- * This file is the mechanism port of xiaobright/dsh-anchored-standard's
- * assemble filter (MIT), written against headless/cc rather than a Web
- * agent preset. It does not vendor that preset, does not add discovery
- * tools, and restores the full assembled catalog after promotion (the
- * Project2 98/99 configuration).
+ * SPDX-License-Identifier: MIT
+ *
+ * Mechanism provenance (reimplemented, not a vendor copy):
+ *   xiaobright/dsh-anchored-standard
+ *   Copyright (c) 2026 xiaobright
+ *   Portions Copyright (c) 2026 DeepSeek
+ *   MIT License
+ *   https://github.com/xiaobright/dsh-anchored-standard
+ *
+ * Experimental evidence (no code incorporated):
+ *   xiaobright/modeltest
+ *   docs/v4.1/DEEPSEEK_V4_TRIGGER_MECHANISM_EXPERIMENTS_20260814.md
+ *
+ * Written against headless/cc rather than a Web agent preset. Does not add
+ * discovery tools; restores the full assembled catalog after promotion.
+ * Full attribution: NOTICE at the repository root.
  */
 
 import { appendSnapshot, snapshotFromAssembleAndRequest, SNAPSHOT_FILE_ENV } from "./request-snapshot.mjs";

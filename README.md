@@ -103,13 +103,24 @@ Read in this order; stop at the layer you need.
 - `/dsh:import` is a weak import (compressed text digest), not a native history replay.
 - POSIX only (unix sockets, pgrep); Windows is out of scope for v1.
 
-## License
-
-MIT — see [LICENSE](LICENSE). Design provenance is credited in [NOTICE](NOTICE).
-
 ## Community and support
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 - Use [SUPPORT.md](SUPPORT.md) for support boundaries and help channels.
 - Report vulnerabilities through the private process in [SECURITY.md](SECURITY.md).
 - Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## Acknowledgements
+
+Third-party copyrights, licenses, and design provenance live in [NOTICE](NOTICE). In short:
+
+- Runtime: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT, Copyright DeepSeek). This plugin composes the public CLI and SDK; it does not vendor harness source.
+- Plugin shape: [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) and [xai-org/grok-build-plugin-cc](https://github.com/xai-org/grok-build-plugin-cc) (both Apache-2.0). Architectural inspiration only; no source copied.
+- `--mode anchored-standard`: assemble-filter / promotion protocol reimplemented from [xiaobright/dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) (MIT). Not a copy of that Web preset. First-request trigger evidence: [xiaobright/modeltest](https://github.com/xiaobright/modeltest) V4 reports (research citation; that repo had no LICENSE file at citation time).
+- [yjh051108/dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) was reviewed and is **not** incorporated.
+
+This project is not affiliated with or endorsed by those authors or organizations.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Redistributors must keep LICENSE and NOTICE.

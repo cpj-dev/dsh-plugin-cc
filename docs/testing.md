@@ -15,7 +15,7 @@
 - `stop.test.mjs` — bridge-level stop semantics: finished-run refusal (PID-reuse regression), kill+cancel, stale cleanup, and in-flight broker-turn abort.
 - `broker.test.mjs` — broker session continuity, timeout freeing, concurrent-startup convergence, stale-lock reclaim, socket-ownership rules, and mode-overlay composition (minimal disable list, standard none, anchored-standard bootstrap insert) against the fake SDK runtime.
 - `resume.test.mjs` — resume continuity plus explicit refusal after broker stop/restart (generation checks), `--timeout-ms` validation/forwarding.
-- `docs.test.mjs` — local Markdown link integrity, required community-health files, reciprocal English/Chinese entry links, and the public/private documentation ignore boundary.
+- `docs.test.mjs` — local Markdown link integrity, required community-health files (including LICENSE and NOTICE), NOTICE license labels, reciprocal English/Chinese entry links, and the public/private documentation ignore boundary.
 
 Fixtures: `fake-dsh-fixture.mjs` (records argv/env, prints canned output — point `DSH_BINARY` at a wrapper for it), `fake-sdk-runtime.mjs` (speaks the SDK wire protocol; prompt directives `hang` and `sleep:<ms>` drive timeout tests), `ensure-broker-child.mjs` and `session-cleanup-writer.mjs` (child processes for real cross-process races), `helpers.mjs` (temp dirs, env isolation).
 

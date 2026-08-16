@@ -21,6 +21,12 @@ Ground rules:
    update is an incomplete change.
 3. No npm dependencies. If a change seems to need one, it probably belongs in
    DeepSeek Harness itself.
+4. Credit third-party code, mechanism ports, and research sources in
+   [NOTICE](NOTICE) in the same commit. Identify each license correctly (do
+   not guess MIT). If you copy a substantial portion of a file, keep its
+   copyright notice. Architectural inspiration still needs a NOTICE line
+   naming the project, license, and URL. Do not vendor files from a project
+   you only reviewed.
 
 ## Before opening a change
 
@@ -52,5 +58,6 @@ The project intentionally has no runtime or development dependencies, so there i
 - Include test evidence and note any manual checks.
 - Keep unrelated refactors out of the same change.
 - Confirm that no credentials, local paths, generated output, or private notes are included.
+- Confirm NOTICE lists any new third-party provenance.
 
 By participating, you agree to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

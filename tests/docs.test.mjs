@@ -57,6 +57,8 @@ test("local Markdown links resolve", () => {
 
 test("community health and bilingual entry files exist", () => {
   const expectedFiles = [
+    "LICENSE",
+    "NOTICE",
     "README.md",
     "README.zh-CN.md",
     "CONTRIBUTING.md",
@@ -94,6 +96,25 @@ test("English and Chinese entry pages link to each other", () => {
     assert.match(english, new RegExp(chineseFile.replace(".", "\\.")));
     assert.match(chinese, new RegExp(englishFile.replace(".", "\\.")));
   }
+});
+
+test("NOTICE records third-party licenses without mislabeling Apache works as MIT", () => {
+  const notice = readFileSync(path.join(rootDir, "NOTICE"), "utf8");
+  assert.match(notice, /Apache License 2\.0/);
+  assert.match(notice, /openai\/codex-plugin-cc/);
+  assert.match(notice, /xai-org\/grok-build-plugin-cc/);
+  assert.match(notice, /xiaobright\/dsh-anchored-standard/);
+  assert.match(notice, /xiaobright\/modeltest/);
+  assert.match(notice, /yjh051108\/dsh-routing-suite/);
+  assert.match(notice, /deepseek-ai\/deepseek-harness/);
+  assert.match(notice, /Contributor Covenant/);
+  // Codex and Grok plugins are Apache-2.0; a leftover "MIT-licensed Claude Code
+  // plugins" line would republish the previous mislabel.
+  assert.doesNotMatch(notice, /MIT-licensed Claude Code/);
+  const afterCodex = notice.slice(notice.indexOf("openai/codex-plugin-cc"));
+  assert.match(afterCodex, /Apache License 2\.0/);
+  const afterGrok = notice.slice(notice.indexOf("xai-org/grok-build-plugin-cc"));
+  assert.match(afterGrok, /Apache License 2\.0/);
 });
 
 test("gitignore preserves public examples and excludes private notes", () => {
