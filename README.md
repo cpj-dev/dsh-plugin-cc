@@ -4,6 +4,7 @@
 
 [![test](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml/badge.svg)](https://github.com/cpj-dev/dsh-plugin-cc/actions/workflows/test.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/cpj-dev/dsh-plugin-cc?style=social)](https://github.com/cpj-dev/dsh-plugin-cc)
 
 Claude Code plugin that runs **DeepSeek Harness** (`dsh`) from slash commands: review, critique, one-shot tasks, and resumable multi-turn sessions.
 
