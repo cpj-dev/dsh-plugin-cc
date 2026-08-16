@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { makeTempDir, withEnv } from "./helpers.mjs";
 
@@ -141,6 +141,9 @@ test("mode overlay: standard is untouched, minimal disables two-tool, anchored-s
   // disabled while the jobs SERVICE stays composed, so a background call
   // would spawn an orphan the model can neither read nor kill.
   assert.match(yaml, /- id: tool-bash\n  config:\n    enableRunInBackground: false/);
+  // Complete persona is the shared bootstrap plugin (dsh-persona cannot mount).
+  assert.match(yaml, /id: cc-tool-bootstrap/);
+  assert.match(yaml, /promoteOn: either/);
   // The sandbox stack is the safety boundary and must stay composed.
   for (const kept of ["sandbox", "sandbox-policy", "bash-sandbox", "approval", "permission"]) {
     assert.ok(!MINIMAL_MODE_DISABLED_ROWS.includes(kept), `row ${kept} must stay enabled`);
@@ -149,7 +152,11 @@ test("mode overlay: standard is untouched, minimal disables two-tool, anchored-s
   const dir = makeTempDir();
   const file = writeModeOverlay(dir, "minimal");
   assert.equal(file, path.join(dir, "overlays", "mode-minimal.yml"));
-  assert.equal(fs.readFileSync(file, "utf8"), yaml);
+  const writtenMinimal = fs.readFileSync(file, "utf8");
+  assert.match(writtenMinimal, /id: cc-tool-bootstrap/);
+  assert.match(writtenMinimal, /includeRuntimeContext: false/);
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "tool-bootstrap.mjs")));
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "request-snapshot.mjs")));
   assert.equal(writeModeOverlay(dir, "standard"), null);
 
   const anchoredYaml = buildModeOverlayYaml("anchored-standard", {
@@ -157,12 +164,13 @@ test("mode overlay: standard is untouched, minimal disables two-tool, anchored-s
   });
   assert.match(anchoredYaml, /mode: anchored-standard/);
   assert.match(anchoredYaml, /includeHarnessIdentity: false/);
-  assert.doesNotMatch(anchoredYaml, /includeRuntimeContext: false/);
+  assert.match(anchoredYaml, /includeRuntimeContext: false/);
   assert.match(anchoredYaml, /id: cc-tool-bootstrap/);
   assert.match(anchoredYaml, /name: '\/tmp\/overlays\/tool-bootstrap\.mjs'/);
   assert.match(anchoredYaml, /promoteOn: either/);
   assert.doesNotMatch(anchoredYaml, /id: tool-fs\n  disabled: true/);
   assert.doesNotMatch(anchoredYaml, /id: tool-web\n  disabled: true/);
+  assert.doesNotMatch(anchoredYaml, /enableRunInBackground: false/);
 
   const anchoredFile = writeModeOverlay(dir, "anchored-standard");
   assert.equal(anchoredFile, path.join(dir, "overlays", "mode-anchored-standard.yml"));
@@ -170,6 +178,10 @@ test("mode overlay: standard is untouched, minimal disables two-tool, anchored-s
   assert.ok(fs.existsSync(path.join(dir, "overlays", "request-snapshot.mjs")));
   const written = fs.readFileSync(anchoredFile, "utf8");
   assert.match(written, /tool-bootstrap\.mjs/);
+  assert.match(written, /includeRuntimeContext: false/);
+
+  const copied = await import(pathToFileURL(path.join(dir, "overlays", "tool-bootstrap.mjs")).href);
+  assert.equal(copied.name, "dsh-plugin-cc-tool-bootstrap");
 });
 
 test("runHeadlessAgent applies the mode overlay and strips DSH_TOOLS_MODE", async () => {
@@ -282,6 +294,7 @@ test("bridge one-shot runs default to minimal mode, switchable per run, env, and
   assert.match(patches, /- id: tool-fs\n  disabled: true/);
   assert.match(patches, /- id: tool-web\n  disabled: true/);
   assert.match(patches, /enableRunInBackground: false/);
+  assert.match(patches, /id: cc-tool-bootstrap/);
   // The composed mode is observable in the payload (--json prints the
   // payload alone).
   assert.equal(JSON.parse(defaulted.stdout).agentMode, "minimal");
@@ -317,6 +330,7 @@ test("bridge one-shot runs default to minimal mode, switchable per run, env, and
   assert.match(anchoredPatches, /mode: anchored-standard/);
   assert.match(anchoredPatches, /id: cc-tool-bootstrap/);
   assert.match(anchoredPatches, /promoteOn: either/);
+  assert.match(anchoredPatches, /includeRuntimeContext: false/);
   assert.doesNotMatch(anchoredPatches, /id: tool-fs\n  disabled: true/);
   assert.equal(JSON.parse(anchored.stdout).agentMode, "anchored-standard");
 

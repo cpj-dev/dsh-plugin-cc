@@ -4,7 +4,7 @@
 
 ### Added
 
-- **`--mode anchored-standard`**: two-phase agent mode that keeps the full dsh-base tool registry mounted and filters the model-visible catalog to bash + `str_replace_editor` until that session records a durable `tool/call` or `assistant/message`, then restores the assembled catalog (and `agent-instructions` / `skill-catalog` injections). Default remains `minimal`. Optional `DSH_CC_SNAPSHOT_FILE` records per-assemble JSONL snapshots of system texts, tool names, schema hashes, and context source kinds.
+- **`--mode anchored-standard`**: two-phase agent mode that keeps the full dsh-base tool registry mounted and filters the model-visible catalog to bash + `str_replace_editor` until that session records a durable `tool/call` or `assistant/message`, then restores the assembled catalog (and `agent-instructions` / `skill-catalog` injections). Default remains `minimal`. The same bootstrap plugin is also inserted for `minimal` so assemble sections become one `complete: true` RL sentence; extra tools stay uncomposed there, so promotion cannot widen that catalog. Optional `DSH_CC_SNAPSHOT_FILE` records per-assemble JSONL snapshots of system texts, tool names, schema hashes, and context source kinds. Remaining wire delta vs official Web Minimal (persistent PTY bash, `dsh-fs-local`) is documented in `docs/dsh-compat.md` and is not a fourth mode.
 - English and Simplified Chinese entry points for setup, commands, troubleshooting, contribution, support, security, and community conduct, with bilingual command-palette descriptions.
 - GitHub community-health files: Contributor Covenant 2.1, structured bug/feature forms, and a bilingual pull-request checklist.
 

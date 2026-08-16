@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -202,6 +205,60 @@ test("apply(): pre-execute rejects hidden tools until promoted", async () => {
   assert.equal(allowed, "executed");
   const bash = await ctx.preExecute({ agent: session([]), name: "bash" });
   assert.equal(bash, "executed");
+});
+
+test("apply(): assemble filter failure exposes the full catalog once", async () => {
+  const warnings = [];
+  const ctx = createFakeCtx();
+  ctx.logger = {
+    warn(message) {
+      warnings.push(message);
+    }
+  };
+  apply(ctx, {});
+  const assembled = {
+    get tools() {
+      throw new Error("boom");
+    },
+    sections: [{ text: "keep me" }]
+  };
+  const result = await ctx.assemble({ agent: session([]) }, assembled);
+  assert.equal(result, assembled);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /exposing the full catalog/);
+});
+
+test("apply() appends per-turn snapshots when DSH_CC_SNAPSHOT_FILE is set", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-boot-snap-"));
+  const file = path.join(dir, "snap.jsonl");
+  const previous = process.env.DSH_CC_SNAPSHOT_FILE;
+  process.env.DSH_CC_SNAPSHOT_FILE = file;
+  try {
+    const ctx = createFakeCtx();
+    apply(ctx, {});
+    const agent = session([]);
+    await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: FULL_TOOLS });
+    agent.session.events.push({ type: "assistant/message" });
+    await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: FULL_TOOLS });
+    const lines = fs
+      .readFileSync(file, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(lines[0].turn, 1);
+    assert.equal(lines[0].promoted, false);
+    assert.deepEqual(lines[0].toolNames, ["bash", "str_replace_editor"]);
+    assert.deepEqual(lines[0].systemTexts, [RL_PERSONA]);
+    assert.equal(lines[1].turn, 2);
+    assert.equal(lines[1].promoted, true);
+    assert.deepEqual(lines[1].toolNames, ["bash", "str_replace_editor", "read", "web_search"]);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DSH_CC_SNAPSHOT_FILE;
+    } else {
+      process.env.DSH_CC_SNAPSHOT_FILE = previous;
+    }
+  }
 });
 
 test("apply() rejects unknown config keys at mount", () => {

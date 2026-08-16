@@ -11,6 +11,28 @@ import {
   snapshotFromAssembleAndRequest
 } from "../plugins/dsh/scripts/lib/request-snapshot.mjs";
 
+test("snapshotFromAssembleAndRequest always emits the P0 field set", () => {
+  const snapshot = snapshotFromAssembleAndRequest({});
+  assert.deepEqual(
+    Object.keys(snapshot).sort(),
+    [
+      "contextSourceKinds",
+      "maxTokens",
+      "model",
+      "promoted",
+      "reasoningEffort",
+      "systemTexts",
+      "toolNames",
+      "toolSchemaHashes",
+      "turn"
+    ]
+  );
+  assert.equal(snapshot.turn, 1);
+  assert.deepEqual(snapshot.systemTexts, []);
+  assert.deepEqual(snapshot.toolNames, []);
+  assert.deepEqual(snapshot.contextSourceKinds, []);
+});
+
 test("hashToolSchema is stable for key order and sensitive to description", () => {
   const a = hashToolSchema({
     name: "bash",

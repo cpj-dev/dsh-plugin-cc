@@ -157,6 +157,20 @@ function recordSnapshot(assembled, request, extra) {
   }
 }
 
+/** Per-session assemble counter for optional JSONL snapshots. */
+function createTurnCounter() {
+  const turns = new WeakMap();
+  return (agent) => {
+    const session = agent?.session;
+    if (!session || typeof session !== "object") {
+      return 1;
+    }
+    const turn = (turns.get(session) ?? 0) + 1;
+    turns.set(session, turn);
+    return turn;
+  };
+}
+
 /** Register the per-session bootstrap filters. */
 export function apply(ctx, config) {
   const source = config === undefined ? {} : config;
@@ -179,6 +193,7 @@ export function apply(ctx, config) {
   );
   const persona = parsePersona(source.persona);
   const visible = new Set(bootstrapTools);
+  const nextTurn = createTurnCounter();
 
   let warned = false;
   const warnOnce = (message) => {
@@ -204,12 +219,13 @@ export function apply(ctx, config) {
   listen("system-prompt/assemble", async (_assembly, context, next) => {
     const assembled = await next();
     try {
-      const { promoted } = promotionStatus(sessionOf(null, context), promoteEvents);
+      const agent = sessionOf(null, context);
+      const { promoted } = promotionStatus(agent, promoteEvents);
       let nextAssembled = applyCompletePersona(assembled, persona);
       if (!promoted) {
         nextAssembled = filterAssembledTools(nextAssembled, bootstrapTools);
       }
-      recordSnapshot(nextAssembled, null, { promoted });
+      recordSnapshot(nextAssembled, null, { promoted, turn: nextTurn(agent) });
       return nextAssembled;
     } catch (error) {
       warnOnce(`${name}: assemble filter failed, exposing the full catalog: ${String(error?.message ?? error)}`);
