@@ -185,17 +185,24 @@ function sessionEventArgs(first, second) {
   return { session: first, event: second };
 }
 
-function requestFromHeader(header) {
+/**
+ * Flatten an rc.6 `EpochHeader` into the snapshot request bag.
+ * Session event data is `{ header, reason }`; the header itself is
+ * `{ config: LlmCallConfig, adapterDefaults?, system?, tools? }` —
+ * there is no `header.call` and no top-level `header.model`.
+ */
+export function requestFromHeader(header) {
   if (!header || typeof header !== "object") {
     return null;
   }
-  const call = header.call && typeof header.call === "object" ? header.call : header;
+  const config = header.config && typeof header.config === "object" ? header.config : null;
   return {
-    model: call.model ?? header.model ?? null,
-    maxTokens: call.maxTokens ?? header.maxTokens ?? header.max_tokens ?? null,
-    reasoningEffort: call.reasoningEffort ?? header.reasoningEffort ?? null,
+    model: config?.model ?? header.model ?? null,
+    maxTokens: config?.maxTokens ?? header.maxTokens ?? header.max_tokens ?? null,
+    reasoningEffort: config?.reasoningEffort ?? header.reasoningEffort ?? null,
     messages: header.messages,
-    tools: header.tools ?? call.tools
+    tools: Array.isArray(header.tools) ? header.tools : null,
+    config
   };
 }
 
@@ -308,6 +315,14 @@ export function apply(ctx, config) {
     }
   };
 
+  const replacePending = (agent, value) => {
+    const key = phaseKey(agent);
+    if (!key) {
+      return;
+    }
+    pendingBySession.set(key, value);
+  };
+
   const stashPending = (agent, patch) => {
     const key = phaseKey(agent);
     if (!key) {
@@ -326,15 +341,22 @@ export function apply(ctx, config) {
     try {
       const request = extra.request ?? stashed.request ?? null;
       const assembled = extra.assembled ?? stashed.assembled ?? null;
+      // Overlay header.tools only on the request line. A pre-step snapshot
+      // must use this assemble's catalog — the previous header's tools would
+      // otherwise survive into a promoted pre-step via stash merge.
       const withHeaderTools =
-        request && Array.isArray(request.tools) && assembled && typeof assembled === "object"
+        snapshotSource === "request" &&
+        request &&
+        Array.isArray(request.tools) &&
+        assembled &&
+        typeof assembled === "object"
           ? { ...assembled, tools: request.tools }
           : assembled;
       appendSnapshot(
         dest,
         snapshotFromAssembleAndRequest({
           assembled: withHeaderTools,
-          request,
+          request: snapshotSource === "request" ? request : null,
           messages: extra.messages ?? stashed.messages ?? null,
           turn: extra.turn ?? stashed.turn ?? 1,
           promoted: extra.promoted ?? stashed.promoted ?? null,
@@ -363,7 +385,9 @@ export function apply(ctx, config) {
           nextAssembled = filterAssembledTools(nextAssembled, bootstrapTools);
         }
         const turn = nextTurn(agent);
-        stashPending(agent, { assembled: nextAssembled, promoted, turn });
+        // Replace, do not merge: a leftover request/header from the previous
+        // step would overlay that step's tools onto this pre-step snapshot.
+        replacePending(agent, { assembled: nextAssembled, promoted, turn });
         return nextAssembled;
       } catch (error) {
         warnOnce(`${name}: assemble filter failed, exposing the full catalog: ${String(error?.message ?? error)}`);

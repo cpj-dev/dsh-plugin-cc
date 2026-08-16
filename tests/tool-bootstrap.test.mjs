@@ -15,6 +15,7 @@ import {
   isPromoted,
   name as pluginName,
   promotionStatus,
+  requestFromHeader,
   RL_PERSONA,
   shouldRejectHiddenTool,
   toolNameFromExecutePayload
@@ -28,6 +29,26 @@ const FULL_TOOLS = [...TWO_TOOLS, { name: "read", description: "read files" }, {
 
 function session(events) {
   return { session: { events } };
+}
+
+/** rc.6 `request/header` payload: `{ header: EpochHeader, reason }`. */
+function rc6HeaderEvent({ tools = TWO_TOOLS, reason = "initial", config = {} } = {}) {
+  return {
+    type: "request/header",
+    data: {
+      header: {
+        config: {
+          provider: "deepseek-official",
+          model: "deepseek-v4-pro",
+          maxTokens: 256000,
+          reasoningEffort: "max",
+          ...config
+        },
+        tools
+      },
+      reason
+    }
+  };
 }
 
 function createFakeCtx() {
@@ -299,7 +320,33 @@ test("apply(): assemble filter failure exposes the full catalog once", async () 
   assert.match(warnings[0], /exposing the full catalog/);
 });
 
-test("apply() appends pre-step and request/header snapshots when DSH_CC_SNAPSHOT_FILE is set", async () => {
+test("requestFromHeader reads rc.6 EpochHeader.config, not a top-level model", () => {
+  const request = requestFromHeader({
+    config: {
+      provider: "deepseek-official",
+      model: "deepseek-v4-pro",
+      maxTokens: 256000,
+      reasoningEffort: "max"
+    },
+    tools: TWO_TOOLS
+  });
+  assert.equal(request.model, "deepseek-v4-pro");
+  assert.equal(request.maxTokens, 256000);
+  assert.equal(request.reasoningEffort, "max");
+  assert.deepEqual(
+    request.tools.map((tool) => tool.name),
+    ["bash", "str_replace_editor"]
+  );
+  assert.equal(
+    requestFromHeader({
+      config: {},
+      tools: TWO_TOOLS
+    }).model,
+    null
+  );
+});
+
+test("apply() records EpochHeader.config and does not inherit the previous header into the next pre-step", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-boot-snap-"));
   const file = path.join(dir, "snap.jsonl");
   const previous = process.env.DSH_CC_SNAPSHOT_FILE;
@@ -322,14 +369,12 @@ test("apply() appends pre-step and request/header snapshots when DSH_CC_SNAPSHOT
       stripped.messages.map((message) => message.source.kind),
       ["user"]
     );
-    ctx.emitSessionEvent(agent.session, {
-      type: "request/header",
-      data: { model: "deepseek-v4-pro", maxTokens: 256000, reasoningEffort: "max" }
-    });
+    ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: TWO_TOOLS, reason: "initial" }));
 
     agent.session.events.push({ type: "assistant/message" });
     await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: FULL_TOOLS });
     await ctx.preStep(agent, injected);
+    ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: FULL_TOOLS, reason: "change" }));
 
     const lines = fs
       .readFileSync(file, "utf8")
@@ -339,6 +384,7 @@ test("apply() appends pre-step and request/header snapshots when DSH_CC_SNAPSHOT
     const firstPreStep = lines.find((line) => line.source === "pre-step" && line.turn === 1);
     const firstHeader = lines.find((line) => line.source === "request" && line.turn === 1);
     const secondPreStep = lines.find((line) => line.source === "pre-step" && line.turn === 2);
+    const secondHeader = lines.find((line) => line.source === "request" && line.turn === 2);
     assert.equal(firstPreStep.promoted, false);
     assert.deepEqual(firstPreStep.toolNames, ["bash", "str_replace_editor"]);
     assert.deepEqual(firstPreStep.systemTexts, [RL_PERSONA]);
@@ -346,10 +392,13 @@ test("apply() appends pre-step and request/header snapshots when DSH_CC_SNAPSHOT
     assert.equal(firstHeader.model, "deepseek-v4-pro");
     assert.equal(firstHeader.maxTokens, 256000);
     assert.equal(firstHeader.reasoningEffort, "max");
+    assert.deepEqual(firstHeader.toolNames, ["bash", "str_replace_editor"]);
     assert.deepEqual(firstHeader.contextSourceKinds, []);
     assert.equal(secondPreStep.promoted, true);
     assert.deepEqual(secondPreStep.toolNames, ["bash", "str_replace_editor", "read", "web_search"]);
     assert.deepEqual(secondPreStep.contextSourceKinds.sort(), ["agent-instructions", "skill-catalog"]);
+    assert.equal(secondHeader.model, "deepseek-v4-pro");
+    assert.deepEqual(secondHeader.toolNames, ["bash", "str_replace_editor", "read", "web_search"]);
   } finally {
     if (previous === undefined) {
       delete process.env.DSH_CC_SNAPSHOT_FILE;

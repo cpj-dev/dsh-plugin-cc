@@ -107,6 +107,26 @@ test("snapshotFromAssembleAndRequest reads context kinds from final pre-step mes
   assert.equal(snapshot.model, null);
 });
 
+test("snapshotFromAssembleAndRequest reads model fields from EpochHeader.config", () => {
+  const snapshot = snapshotFromAssembleAndRequest({
+    assembled: { sections: [{ text: "You are a helpful software engineer assistant." }], tools: [{ name: "bash" }] },
+    request: {
+      config: {
+        provider: "deepseek-official",
+        model: "deepseek-v4-pro",
+        maxTokens: 256000,
+        reasoningEffort: "max"
+      }
+    },
+    source: "request",
+    promoted: false
+  });
+  assert.equal(snapshot.model, "deepseek-v4-pro");
+  assert.equal(snapshot.maxTokens, 256000);
+  assert.equal(snapshot.reasoningEffort, "max");
+  assert.equal(snapshot.source, "request");
+});
+
 test("appendSnapshot writes JSONL when a path is given", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-snap-"));
   const file = path.join(dir, "out.jsonl");

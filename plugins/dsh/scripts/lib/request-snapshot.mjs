@@ -1,10 +1,11 @@
 /**
  * Reduce model-visible prompt pieces into a small, comparable snapshot.
  * The bootstrap plugin records after `agent/pre-step` (context kinds) and
- * again on session `request/header` (model / maxTokens / effort). Assemble
- * alone cannot see `agent-instructions` / `skill-catalog` — those are
- * injected at pre-step — so do not treat an assemble-time empty
- * `contextSourceKinds` as proof the strip worked.
+ * again on session `request/header` (model / maxTokens / effort). rc.6
+ * stores those scalars on `event.data.header.config` (`EpochHeader`), not
+ * on the header root. Assemble alone cannot see `agent-instructions` /
+ * `skill-catalog` — those are injected at pre-step — so do not treat an
+ * assemble-time empty `contextSourceKinds` as proof the strip worked.
  */
 
 import { createHash } from "node:crypto";
@@ -104,7 +105,7 @@ export function snapshotFromAssembleAndRequest({
     toolSchemaHashes: tools.map(hashToolSchema),
     contextSourceKinds: collectSourceKinds(assembled, request, messages),
     maxTokens: request?.maxTokens ?? request?.config?.maxTokens ?? null,
-    model: request?.model ?? assembled?.model ?? null,
+    model: request?.model ?? request?.config?.model ?? assembled?.model ?? null,
     reasoningEffort: request?.reasoningEffort ?? request?.config?.reasoningEffort ?? null
   };
 }
