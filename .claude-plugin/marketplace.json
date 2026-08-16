@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "DeepSeek Harness ↔ Claude Code bridge for review, critique, and delegation / 用于审查、评审和任务委派的桥接插件。",
-    "version": "1.0.0"
+    "version": "2.0.0"
   },
   "plugins": [
     {
       "name": "dsh",
       "description": "DeepSeek Harness ↔ Claude Code bridge for review, critique, and delegation / 用于审查、评审和任务委派的桥接插件。",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "author": {
         "name": "DeepSeek Harness community"
       },

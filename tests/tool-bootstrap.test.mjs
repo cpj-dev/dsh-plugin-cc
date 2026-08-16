@@ -51,17 +51,65 @@ function rc6HeaderEvent({ tools = TWO_TOOLS, reason = "initial", config = {} } =
   };
 }
 
-function createFakeCtx() {
+/**
+ * Service names a real dsh composition exposes on the context. A cordis
+ * context proxy THROWS on any of these unless the accessing plugin injected
+ * it, so the fake ctx below must throw too — an object literal with a plain
+ * `systemPrompt` property let a mount-time `ctx.systemPrompt?.section` probe
+ * pass every unit test while crashing every real run
+ * (`cannot get property "systemPrompt" without inject`).
+ */
+const CTX_SERVICES = new Set(["systemPrompt"]);
+
+/** Cordis-shaped guard: reading a non-injected service is an error, not undefined. */
+function guardServices(target, injected) {
+  return new Proxy(target, {
+    get(object, prop, receiver) {
+      if (typeof prop !== "symbol" && CTX_SERVICES.has(prop) && !injected.has(prop)) {
+        throw new Error(`cannot get property "${prop}" without inject`);
+      }
+      return Reflect.get(object, prop, receiver);
+    },
+    has(object, prop) {
+      if (typeof prop !== "symbol" && CTX_SERVICES.has(prop) && !injected.has(prop)) {
+        return false;
+      }
+      return Reflect.has(object, prop);
+    }
+  });
+}
+
+/**
+ * @param {object} [options]
+ * @param {string[]} [options.missingServices] services this composition does
+ *   not provide at all — `ctx.inject()` then never runs its callback, the way
+ *   a cordis fiber stays inactive until its dependencies appear.
+ */
+function createFakeCtx({ missingServices = [] } = {}) {
   const handlers = Object.create(null);
   const registeredSections = [];
-  return {
-    logger: { warn() {} },
+  const absent = new Set(missingServices);
+  const services = {
     systemPrompt: {
       section(section) {
         registeredSections.push(section);
       }
-    },
+    }
+  };
+  const base = {
+    logger: { warn() {} },
     registeredSections,
+    injectedNames: [],
+    inject(names, callback) {
+      base.injectedNames.push([...names]);
+      // A real fiber runs the callback on a later tick, and never at all while
+      // a dependency is unmet — mirror both, so a test cannot accidentally
+      // depend on a mount-time registration that the runtime defers.
+      if (names.some((serviceName) => absent.has(serviceName))) {
+        return;
+      }
+      Promise.resolve().then(() => callback(guardServices({ ...base, ...services }, new Set(names))));
+    },
     on(event, fn, options) {
       const list = (handlers[event] ??= []);
       if (options?.prepend) {
@@ -117,6 +165,7 @@ function createFakeCtx() {
       }
     }
   };
+  return guardServices(base, new Set());
 }
 
 test("isPromoted: either fires on tool/call or assistant/message, not on other events", () => {
@@ -282,6 +331,7 @@ test("apply(): an already-registered outer post-transform cannot re-widen reques
     };
   });
   apply(ctx, {});
+  await Promise.resolve(); // the inject fiber registers on a later tick
   assert.equal(ctx.registeredSections[0]?.complete, true);
   assert.equal(ctx.registeredSections[0]?.name, COMPLETE_SECTION_NAME);
 
@@ -296,6 +346,40 @@ test("apply(): an already-registered outer post-transform cannot re-widen reques
   assert.deepEqual(
     first.sections.map((section) => section.text),
     [RL_PERSONA]
+  );
+});
+
+test("apply(): mounting never reads an un-injected service off the context", async () => {
+  // Regression: `typeof ctx?.systemPrompt?.section !== "function"` reads as a
+  // safe probe but is the crash itself on a cordis context proxy, so every
+  // minimal / anchored-standard run died at boot with
+  // `plugin tree failed to load: … cannot get property "systemPrompt" without inject`.
+  const ctx = createFakeCtx();
+  assert.throws(() => ctx.systemPrompt, /cannot get property "systemPrompt" without inject/);
+  apply(ctx, {});
+  assert.deepEqual(ctx.injectedNames, [["systemPrompt"]]);
+  await Promise.resolve(); // a real fiber registers the section on a later tick
+  assert.equal(ctx.registeredSections[0]?.name, COMPLETE_SECTION_NAME);
+  assert.equal(ctx.registeredSections[0]?.complete, true);
+});
+
+test("apply(): a composition without the prompt registry still filters the catalog", async () => {
+  // The persona registration is scoped to its own inject fiber precisely so a
+  // missing registry cannot take the tool filter down with it.
+  const warnings = [];
+  const ctx = createFakeCtx({ missingServices: ["systemPrompt"] });
+  ctx.logger = {
+    warn(message) {
+      warnings.push(message);
+    }
+  };
+  apply(ctx, {});
+  assert.deepEqual(ctx.registeredSections, []);
+  assert.deepEqual(warnings, []);
+  const first = await ctx.assemble({ agent: session([]) }, { sections: [{ text: "identity" }], tools: FULL_TOOLS });
+  assert.deepEqual(
+    first.tools.map((tool) => tool.name),
+    ["bash", "str_replace_editor"]
   );
 });
 
@@ -370,11 +454,13 @@ test("apply() records EpochHeader.config and does not inherit the previous heade
       ["user"]
     );
     ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: TWO_TOOLS, reason: "initial" }));
+    ctx.emitSessionEvent(agent.session, { type: "step/end" });
 
     agent.session.events.push({ type: "assistant/message" });
     await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: FULL_TOOLS });
     await ctx.preStep(agent, injected);
     ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: FULL_TOOLS, reason: "change" }));
+    ctx.emitSessionEvent(agent.session, { type: "step/end" });
 
     const lines = fs
       .readFileSync(file, "utf8")
@@ -399,6 +485,50 @@ test("apply() records EpochHeader.config and does not inherit the previous heade
     assert.deepEqual(secondPreStep.contextSourceKinds.sort(), ["agent-instructions", "skill-catalog"]);
     assert.equal(secondHeader.model, "deepseek-v4-pro");
     assert.deepEqual(secondHeader.toolNames, ["bash", "str_replace_editor", "read", "web_search"]);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DSH_CC_SNAPSHOT_FILE;
+    } else {
+      process.env.DSH_CC_SNAPSHOT_FILE = previous;
+    }
+  }
+});
+
+test("apply() records a wire line for a step whose header did not change", async () => {
+  // rc.6 appends `request/header` only for `initial` / `resume` / `change`.
+  // Minimal mode holds one header for the whole run, so recording solely on
+  // that event left every step after the first with no wire evidence at all.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-boot-steady-"));
+  const file = path.join(dir, "snap.jsonl");
+  const previous = process.env.DSH_CC_SNAPSHOT_FILE;
+  process.env.DSH_CC_SNAPSHOT_FILE = file;
+  try {
+    const ctx = createFakeCtx();
+    apply(ctx, {});
+    const agent = session([]);
+    await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: TWO_TOOLS });
+    ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: TWO_TOOLS, reason: "initial" }));
+    ctx.emitSessionEvent(agent.session, { type: "step/end" });
+
+    // Second step: promoted, but the composed catalog is still the pair, so
+    // the runtime emits no new header.
+    agent.session.events.push({ type: "assistant/message" });
+    await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: TWO_TOOLS });
+    ctx.emitSessionEvent(agent.session, { type: "step/end" });
+
+    const wire = fs
+      .readFileSync(file, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((line) => line.source === "request");
+    assert.deepEqual(
+      wire.map((line) => line.turn),
+      [1, 2]
+    );
+    assert.deepEqual(wire[1].toolNames, ["bash", "str_replace_editor"]);
+    assert.equal(wire[1].promoted, true);
+    assert.equal(wire[1].model, "deepseek-v4-pro");
   } finally {
     if (previous === undefined) {
       delete process.env.DSH_CC_SNAPSHOT_FILE;

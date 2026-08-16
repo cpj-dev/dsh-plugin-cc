@@ -21,7 +21,14 @@ Ground rules:
    update is an incomplete change.
 3. No npm dependencies. If a change seems to need one, it probably belongs in
    DeepSeek Harness itself.
-4. Credit third-party code, mechanism ports, and research sources in
+4. Anything that ships under `plugins/` or `.claude-plugin/` bumps the version
+   (plugin.json, marketplace.json ×2, package.json) and adds its
+   [CHANGELOG](CHANGELOG.md) entry under that version, in the same pull
+   request. `main` is the distribution channel and Claude Code keys a plugin's
+   install directory by that number, so an unbumped change ships claiming to be
+   the previous release. There is no `Unreleased` section; CI enforces both
+   halves.
+5. Credit third-party code, mechanism ports, and research sources in
    [NOTICE](NOTICE) in the same commit. Identify each license correctly (do
    not guess MIT). If you copy a substantial portion of a file, keep its
    copyright notice. Architectural inspiration still needs a NOTICE line

@@ -20,7 +20,8 @@
 
 - User-visible wording lives in `commands/*.md` and `lib/render.mjs`; behavior lives in the bridge/libs. Change them in separate commits when possible — wording changes should be safe to ship alone.
 - The managed `cc` profile patch block is versioned by its marker comment; if the block's content must change, add migration handling in `handleSetup` (detect the old block, replace it), because existing users already have the old text on disk.
-- Bump `plugins/dsh/.claude-plugin/plugin.json` and the marketplace entry version together on release; tag the repo.
+- **Every pull request that changes `plugins/` or `.claude-plugin/` bumps the version.** `main` is the distribution channel: `/plugin install` takes whatever `main` holds, unpacks it into `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`, and records that version in `installed_plugins.json`. Bumping only "on release" means every intermediate build claims to be the previous release — which is how `1.0.0` came to cover a dozen different trees, `/plugin` stopped being able to tell them apart, and a bug report could not name what it was filed against. `tests/version.test.mjs` checks that the four manifests agree and that the changelog leads with that version; the `version` CI job fails a pull request that ships plugin code without raising the number. There is no `Unreleased` changelog section — write the entry under the version you are shipping.
+- Mount-time code in `lib/tool-bootstrap.mjs` is load-bearing for two modes at once, and `--dump-config` composes rows **without ever calling a plugin's `apply()`** — only a real run catches a mount failure there. See the boot smoke in [testing.md](testing.md) item 15.
 
 ## Release checklist
 
@@ -28,5 +29,5 @@
 2. Manual acceptance checklist in [testing.md](testing.md) against the pinned dsh version.
 3. Docs synced (README tables, commands.md, dsh-compat.md pin). NOTICE still names every third-party source with the correct license.
 4. English and Simplified Chinese user-entry pages synced; relative links and community templates checked.
-5. `CHANGELOG.md` entry finalized, recording the pinned `@deepseek-ai/dsh` npm version used for acceptance.
-6. Version bumps (plugin.json, marketplace.json ×2, package.json) + tag.
+5. `CHANGELOG.md` entry finalized under the shipping version's heading, recording the pinned `@deepseek-ai/dsh` npm version used for acceptance.
+6. Version bumps (plugin.json, marketplace.json ×2, package.json) land **in** the shipping pull request, not after it; tag `v<version>` on `main` once merged.

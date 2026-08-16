@@ -78,6 +78,7 @@ import {
   resolveResultJob,
   sortJobsNewestFirst
 } from "./lib/job-control.mjs";
+import { describePluginBuild } from "./lib/plugin-meta.mjs";
 import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
 import { interpolateTemplate, loadPromptTemplate } from "./lib/prompts.mjs";
 import { compressTranscript, resolveClaudeSessionPath } from "./lib/claude-session-transfer.mjs";
@@ -337,6 +338,9 @@ async function buildCheckReport(cwd, actionsTaken = []) {
     // and broker paths alike, so nothing can run until it is corrected.
     ready: nodeStatus.available && dshStatus.available && authStatus.ok && !managedNpmStale && mode.ok,
     multiTurnReady: profileStatus.ready && mode.ok,
+    // Reported, never gating: a build id is for the bug report, and the
+    // manifest being unreadable says nothing about whether dsh can run.
+    plugin: describePluginBuild(),
     node: nodeStatus,
     dsh: dshStatus,
     auth: authStatus,

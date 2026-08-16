@@ -33,9 +33,13 @@ import { appendSnapshot, snapshotFromAssembleAndRequest, SNAPSHOT_FILE_ENV } fro
 export const name = "dsh-plugin-cc-tool-bootstrap";
 
 /**
- * Empty inject: listeners only touch services at event time. Combined with
- * `--patch` (last composition layer) and `{ prepend: true }` on assemble /
- * pre-step / pre-execute, the strip stays the outermost transform.
+ * Empty inject: listeners only touch services at event time, so nothing here
+ * may gate this plugin's activation. Combined with `--patch` (last composition
+ * layer) and `{ prepend: true }` on assemble / pre-step / pre-execute, the
+ * strip stays the outermost transform. The one service this plugin does touch
+ * at apply() time — `systemPrompt` — is injected in a nested fiber instead
+ * (see `registerCompletePersona`); a cordis context proxy throws on any
+ * un-injected service property, so it can never be probed with `?.`.
  */
 export const inject = [];
 
@@ -206,19 +210,43 @@ export function requestFromHeader(header) {
   };
 }
 
+/**
+ * Register the complete persona through a nested inject fiber.
+ *
+ * A cordis context proxy THROWS on `ctx.systemPrompt` when the accessing
+ * plugin did not inject it — `typeof ctx?.systemPrompt?.section` is not a
+ * safe probe, it is the crash (`cannot get property "systemPrompt" without
+ * inject`). Declaring the service in this plugin's top-level `inject` would
+ * fix the access but gate the whole plugin on it: a composition without the
+ * registry would silently lose the tool filter too. `ctx.inject()` scopes the
+ * dependency to the registration alone — the listeners below always attach,
+ * and the section is registered (and disposed) with the nested fiber.
+ *
+ * Two consequences worth knowing. The callback runs on a later tick, which is
+ * still long before the first assemble. And when nothing provides the registry
+ * the fiber simply stays pending: no throw, no warning, no complete section —
+ * the run keeps whatever persona the composition assembled, and the catalog
+ * filter is unaffected. Cordis exposes no "will never be satisfied" signal to
+ * warn on.
+ */
 function registerCompletePersona(ctx, persona, warnOnce) {
-  if (typeof ctx?.systemPrompt?.section !== "function") {
-    return;
-  }
   try {
-    ctx.systemPrompt.section({
-      name: COMPLETE_SECTION_NAME,
-      order: 0,
-      text: persona,
-      complete: true
+    ctx.inject(["systemPrompt"], function registerPersonaSection(scoped) {
+      try {
+        scoped.systemPrompt.section({
+          name: COMPLETE_SECTION_NAME,
+          order: 0,
+          text: persona,
+          complete: true
+        });
+      } catch (error) {
+        warnOnce(`${name}: systemPrompt.section complete persona failed: ${String(error?.message ?? error)}`);
+      }
     });
   } catch (error) {
-    warnOnce(`${name}: systemPrompt.section complete persona failed: ${String(error?.message ?? error)}`);
+    // Realistically only a host without `ctx.inject` at all; a pending
+    // dependency does not land here.
+    warnOnce(`${name}: could not request systemPrompt, keeping the composed persona: ${String(error?.message ?? error)}`);
   }
 }
 
@@ -261,6 +289,10 @@ export function apply(ctx, config) {
   const nextTurn = createTurnCounter();
   const phaseBySession = new WeakMap();
   const pendingBySession = new WeakMap();
+  // Survives the per-turn pending bag: rc.6 appends `request/header` only when
+  // the header CHANGES (`reason: initial | resume | change`), so a steady-state
+  // step emits none and the last snapshot is still that step's header.
+  const headerBySession = new WeakMap();
 
   let warned = false;
   const warnOnce = (message) => {
@@ -428,7 +460,18 @@ export function apply(ctx, config) {
   listen("session/event", (first, second) => {
     const { session, event } = sessionEventArgs(first, second);
     const type = event?.type;
+    const agent = session?.events ? { session } : session;
     if (type === "step/end") {
+      // One wire line per step, written where the header for THIS step is
+      // finally known. Recording on the `request/header` event alone left
+      // every steady-state step unrecorded — in minimal mode the header never
+      // changes after request #1, so the whole run produced a single wire
+      // line and `docs/testing.md` had no per-step evidence to read.
+      const key = phaseKey(agent);
+      const request = key ? (headerBySession.get(key) ?? null) : null;
+      if (request) {
+        writeSnapshot(agent, "request", { request });
+      }
       clearPhase(session);
       return;
     }
@@ -437,8 +480,9 @@ export function apply(ctx, config) {
     }
     const header = event.data?.header ?? event.data ?? event;
     const request = requestFromHeader(header);
-    const agent = session?.events ? { session } : session;
-    stashPending(agent, { request });
-    writeSnapshot(agent, "request", { request });
+    const key = phaseKey(agent);
+    if (key) {
+      headerBySession.set(key, request);
+    }
   });
 }
