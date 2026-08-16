@@ -5,9 +5,10 @@
  * a durable promotion signal, then returns the assembled catalog unchanged.
  *
  * Promotion is derived from that session's event log (`promoteOn: either` =
- * first `tool/call` OR `assistant/message`), so a text-only first reply
- * (typical of `/dsh:import`) still promotes on the next request, and two
- * broker sessions cannot unlock each other.
+ * first `tool/call` OR `assistant/message`). The phase used by pre-step and
+ * `tools/pre-execute` is frozen at assemble — rc.6 persists `assistant/message`
+ * and the current `tool/call` *before* pre-execute, so a live event scan at
+ * execute time would treat the bootstrap response as already promoted.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -33,14 +34,15 @@ export const name = "dsh-plugin-cc-tool-bootstrap";
 
 /**
  * Empty inject: listeners only touch services at event time. Combined with
- * `--patch` (last composition layer) and `{ prepend: true }` on pre-step /
- * pre-execute, the strip stays the outermost transform.
+ * `--patch` (last composition layer) and `{ prepend: true }` on assemble /
+ * pre-step / pre-execute, the strip stays the outermost transform.
  */
 export const inject = [];
 
 export const RL_PERSONA = "You are a helpful software engineer assistant.";
 export const BOOTSTRAP_TOOLS = ["bash", "str_replace_editor"];
 export const DEFAULT_SUPPRESSED_SOURCES = ["agent-instructions", "skill-catalog"];
+export const COMPLETE_SECTION_NAME = "dsh-plugin-cc:persona";
 export const PROMOTE_EVENTS = {
   either: ["tool/call", "assistant/message"],
   "tool-call": ["tool/call"],
@@ -99,7 +101,7 @@ export function applyCompletePersona(assembled, persona = RL_PERSONA) {
     return assembled;
   }
   const next = {
-    name: "deployment:persona",
+    name: COMPLETE_SECTION_NAME,
     order: 0,
     text: persona,
     complete: true
@@ -152,19 +154,64 @@ export function shouldRejectHiddenTool(toolName, { promoted, visibleTools }) {
   return !visibleTools.has(toolName);
 }
 
+/** rc.6 `tools/pre-execute` contract: `{ kind: "deny", reason }`. */
+export function hiddenToolDeny(toolName) {
+  return {
+    kind: "deny",
+    reason: `${name}: hidden tool "${toolName}" rejected during bootstrap`
+  };
+}
+
 function sessionOf(payload, context) {
   return payload?.agent ?? context?.agent ?? payload;
 }
 
-function recordSnapshot(assembled, request, extra) {
-  const dest = process.env[SNAPSHOT_FILE_ENV];
-  if (!dest) {
+/** WeakMap key for per-session freeze / pending snapshot. */
+export function phaseKey(agent) {
+  if (!agent || typeof agent !== "object") {
+    return null;
+  }
+  const session = agent.session;
+  return session && typeof session === "object" ? session : agent;
+}
+
+function sessionEventArgs(first, second) {
+  if (second && typeof second === "object" && typeof second.type === "string") {
+    return { session: first, event: second };
+  }
+  if (first && typeof first === "object" && typeof first.type === "string") {
+    return { session: first.session ?? first, event: first };
+  }
+  return { session: first, event: second };
+}
+
+function requestFromHeader(header) {
+  if (!header || typeof header !== "object") {
+    return null;
+  }
+  const call = header.call && typeof header.call === "object" ? header.call : header;
+  return {
+    model: call.model ?? header.model ?? null,
+    maxTokens: call.maxTokens ?? header.maxTokens ?? header.max_tokens ?? null,
+    reasoningEffort: call.reasoningEffort ?? header.reasoningEffort ?? null,
+    messages: header.messages,
+    tools: header.tools ?? call.tools
+  };
+}
+
+function registerCompletePersona(ctx, persona, warnOnce) {
+  if (typeof ctx?.systemPrompt?.section !== "function") {
     return;
   }
   try {
-    appendSnapshot(dest, snapshotFromAssembleAndRequest({ assembled, request, ...extra }));
-  } catch {
-    // Recording must never brick a turn.
+    ctx.systemPrompt.section({
+      name: COMPLETE_SECTION_NAME,
+      order: 0,
+      text: persona,
+      complete: true
+    });
+  } catch (error) {
+    warnOnce(`${name}: systemPrompt.section complete persona failed: ${String(error?.message ?? error)}`);
   }
 }
 
@@ -172,12 +219,12 @@ function recordSnapshot(assembled, request, extra) {
 function createTurnCounter() {
   const turns = new WeakMap();
   return (agent) => {
-    const session = agent?.session;
-    if (!session || typeof session !== "object") {
+    const key = phaseKey(agent);
+    if (!key) {
       return 1;
     }
-    const turn = (turns.get(session) ?? 0) + 1;
-    turns.set(session, turn);
+    const turn = (turns.get(key) ?? 0) + 1;
+    turns.set(key, turn);
     return turn;
   };
 }
@@ -205,6 +252,8 @@ export function apply(ctx, config) {
   const persona = parsePersona(source.persona);
   const visible = new Set(bootstrapTools);
   const nextTurn = createTurnCounter();
+  const phaseBySession = new WeakMap();
+  const pendingBySession = new WeakMap();
 
   let warned = false;
   const warnOnce = (message) => {
@@ -219,6 +268,8 @@ export function apply(ctx, config) {
     }
   };
 
+  registerCompletePersona(ctx, persona, warnOnce);
+
   const listen = (event, fn, options) => {
     try {
       ctx.on(event, fn, options);
@@ -227,30 +278,111 @@ export function apply(ctx, config) {
     }
   };
 
-  listen("system-prompt/assemble", async (_assembly, context, next) => {
-    const assembled = await next();
-    try {
-      const agent = sessionOf(null, context);
-      const { promoted } = promotionStatus(agent, promoteEvents);
-      let nextAssembled = applyCompletePersona(assembled, persona);
-      if (!promoted) {
-        nextAssembled = filterAssembledTools(nextAssembled, bootstrapTools);
-      }
-      recordSnapshot(nextAssembled, null, { promoted, turn: nextTurn(agent) });
-      return nextAssembled;
-    } catch (error) {
-      warnOnce(`${name}: assemble filter failed, exposing the full catalog: ${String(error?.message ?? error)}`);
-      return assembled;
+  const freezePhase = (agent, promoted) => {
+    const key = phaseKey(agent);
+    const phase = { promoted: Boolean(promoted) };
+    if (key) {
+      phaseBySession.set(key, phase);
     }
-  });
+    return phase;
+  };
+
+  const frozenPhase = (agent) => {
+    const key = phaseKey(agent);
+    if (key && phaseBySession.has(key)) {
+      return phaseBySession.get(key);
+    }
+    return promotionStatus(agent, promoteEvents);
+  };
+
+  const clearPhase = (sessionLike) => {
+    if (!sessionLike || typeof sessionLike !== "object") {
+      return;
+    }
+    if (phaseBySession.has(sessionLike)) {
+      phaseBySession.delete(sessionLike);
+    }
+    const key = phaseKey(sessionLike);
+    if (key) {
+      phaseBySession.delete(key);
+    }
+  };
+
+  const stashPending = (agent, patch) => {
+    const key = phaseKey(agent);
+    if (!key) {
+      return;
+    }
+    pendingBySession.set(key, { ...(pendingBySession.get(key) ?? {}), ...patch });
+  };
+
+  const writeSnapshot = (agent, snapshotSource, extra = {}) => {
+    const dest = process.env[SNAPSHOT_FILE_ENV];
+    if (!dest) {
+      return;
+    }
+    const key = phaseKey(agent);
+    const stashed = (key && pendingBySession.get(key)) ?? {};
+    try {
+      const request = extra.request ?? stashed.request ?? null;
+      const assembled = extra.assembled ?? stashed.assembled ?? null;
+      const withHeaderTools =
+        request && Array.isArray(request.tools) && assembled && typeof assembled === "object"
+          ? { ...assembled, tools: request.tools }
+          : assembled;
+      appendSnapshot(
+        dest,
+        snapshotFromAssembleAndRequest({
+          assembled: withHeaderTools,
+          request,
+          messages: extra.messages ?? stashed.messages ?? null,
+          turn: extra.turn ?? stashed.turn ?? 1,
+          promoted: extra.promoted ?? stashed.promoted ?? null,
+          source: snapshotSource
+        })
+      );
+    } catch {
+      // Recording must never brick a turn.
+    }
+  };
+
+  // Outermost post-transform: later-registered append listeners cannot
+  // re-append tools/sections after this filter. complete:true on the
+  // *returned* AssembledSection is ignored by rc.6 (complete is captured
+  // from the registry before the waterfall); the systemPrompt.section
+  // registration above is the real complete constraint.
+  listen(
+    "system-prompt/assemble",
+    async (_assembly, context, next) => {
+      const assembled = await next();
+      try {
+        const agent = sessionOf(null, context);
+        const { promoted } = freezePhase(agent, promotionStatus(agent, promoteEvents).promoted);
+        let nextAssembled = applyCompletePersona(assembled, persona);
+        if (!promoted) {
+          nextAssembled = filterAssembledTools(nextAssembled, bootstrapTools);
+        }
+        const turn = nextTurn(agent);
+        stashPending(agent, { assembled: nextAssembled, promoted, turn });
+        return nextAssembled;
+      } catch (error) {
+        warnOnce(`${name}: assemble filter failed, exposing the full catalog: ${String(error?.message ?? error)}`);
+        return assembled;
+      }
+    },
+    { prepend: true }
+  );
 
   listen(
     "agent/pre-step",
     async ({ agent }, next) => {
       const decision = await next();
       try {
-        const { promoted } = promotionStatus(agent, promoteEvents);
-        return filterPreStepMessages(decision, { promoted, suppressedSources });
+        const { promoted } = frozenPhase(agent);
+        const filtered = filterPreStepMessages(decision, { promoted, suppressedSources });
+        stashPending(agent, { messages: filtered?.messages, promoted });
+        writeSnapshot(agent, "pre-step", { messages: filtered?.messages, promoted });
+        return filtered;
       } catch (error) {
         warnOnce(`${name}: pre-step filter failed, keeping injected context: ${String(error?.message ?? error)}`);
         return decision;
@@ -261,16 +393,28 @@ export function apply(ctx, config) {
 
   const guardExecute = async (payload, next) => {
     const toolName = toolNameFromExecutePayload(payload);
-    const { promoted } = promotionStatus(sessionOf(payload), promoteEvents);
+    const { promoted } = frozenPhase(sessionOf(payload));
     if (shouldRejectHiddenTool(toolName, { promoted, visibleTools: visible })) {
-      const error = new Error(`${name}: hidden tool "${toolName}" rejected during bootstrap`);
-      if (payload && typeof payload === "object" && "kind" in payload) {
-        return { kind: "reject", error };
-      }
-      throw error;
+      return hiddenToolDeny(toolName);
     }
     return next();
   };
   listen("tools/pre-execute", guardExecute, { prepend: true });
-  listen("tool/pre-execute", guardExecute, { prepend: true });
+
+  listen("session/event", (first, second) => {
+    const { session, event } = sessionEventArgs(first, second);
+    const type = event?.type;
+    if (type === "step/end") {
+      clearPhase(session);
+      return;
+    }
+    if (type !== "request/header") {
+      return;
+    }
+    const header = event.data?.header ?? event.data ?? event;
+    const request = requestFromHeader(header);
+    const agent = session?.events ? { session } : session;
+    stashPending(agent, { request });
+    writeSnapshot(agent, "request", { request });
+  });
 }

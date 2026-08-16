@@ -8,8 +8,10 @@ import {
   apply,
   applyCompletePersona,
   BOOTSTRAP_TOOLS,
+  COMPLETE_SECTION_NAME,
   filterAssembledTools,
   filterPreStepMessages,
+  hiddenToolDeny,
   isPromoted,
   name as pluginName,
   promotionStatus,
@@ -30,10 +32,22 @@ function session(events) {
 
 function createFakeCtx() {
   const handlers = Object.create(null);
+  const registeredSections = [];
   return {
     logger: { warn() {} },
-    on(event, fn) {
-      (handlers[event] ??= []).push(fn);
+    systemPrompt: {
+      section(section) {
+        registeredSections.push(section);
+      }
+    },
+    registeredSections,
+    on(event, fn, options) {
+      const list = (handlers[event] ??= []);
+      if (options?.prepend) {
+        list.unshift(fn);
+      } else {
+        list.push(fn);
+      }
     },
     async assemble(context, base) {
       const list = handlers["system-prompt/assemble"] ?? [];
@@ -74,6 +88,12 @@ function createFakeCtx() {
         return fn(payload, run);
       };
       return run();
+    },
+    emitSessionEvent(session, event) {
+      const list = handlers["session/event"] ?? [];
+      for (const fn of list) {
+        fn(session, event);
+      }
     }
   };
 }
@@ -106,6 +126,7 @@ test("applyCompletePersona replaces every system section with the RL sentence", 
     [RL_PERSONA]
   );
   assert.equal(assembled.sections[0].complete, true);
+  assert.equal(assembled.sections[0].name, COMPLETE_SECTION_NAME);
   assert.equal(assembled.tools.length, 4);
 });
 
@@ -197,14 +218,64 @@ test("apply(): pre-step restores injections after promotion", async () => {
   assert.equal(after.messages.length, 2);
 });
 
-test("apply(): pre-execute rejects hidden tools until promoted", async () => {
+test("apply(): pre-execute denies hidden tools until the *next* assemble", async () => {
   const ctx = createFakeCtx();
   apply(ctx, {});
-  await assert.rejects(() => ctx.preExecute({ agent: session([]), name: "read" }), /hidden tool "read"/);
-  const allowed = await ctx.preExecute({ agent: session([{ type: "tool/call" }]), name: "read" });
-  assert.equal(allowed, "executed");
-  const bash = await ctx.preExecute({ agent: session([]), name: "bash" });
-  assert.equal(bash, "executed");
+  const bootstrap = session([]);
+  await ctx.assemble({ agent: bootstrap }, { tools: FULL_TOOLS, sections: [] });
+  assert.deepEqual(await ctx.preExecute({ agent: bootstrap, name: "read" }), hiddenToolDeny("read"));
+  assert.equal(await ctx.preExecute({ agent: bootstrap, name: "bash" }), "executed");
+
+  const promoted = session([{ type: "tool/call" }]);
+  await ctx.assemble({ agent: promoted }, { tools: FULL_TOOLS, sections: [] });
+  assert.equal(await ctx.preExecute({ agent: promoted, name: "read" }), "executed");
+});
+
+test("apply(): rc.6 persist-then-execute still denies hidden tools on the bootstrap response", async () => {
+  const ctx = createFakeCtx();
+  apply(ctx, {});
+  const agent = session([]);
+  await ctx.assemble({ agent }, { tools: FULL_TOOLS, sections: [{ text: "extra" }] });
+  // rc.6: persist assistant/message, then this tool/call, THEN tools/pre-execute.
+  agent.session.events.push({ type: "assistant/message" }, { type: "tool/call" });
+  assert.deepEqual(await ctx.preExecute({ agent, name: "read" }), hiddenToolDeny("read"));
+  assert.equal(await ctx.preExecute({ agent, name: "bash" }), "executed");
+
+  ctx.emitSessionEvent(agent.session, { type: "step/end" });
+  const second = await ctx.assemble({ agent }, { tools: FULL_TOOLS, sections: [{ text: "extra" }] });
+  assert.deepEqual(
+    second.tools.map((tool) => tool.name),
+    ["bash", "str_replace_editor", "read", "web_search"]
+  );
+  assert.equal(await ctx.preExecute({ agent, name: "read" }), "executed");
+});
+
+test("apply(): an already-registered outer post-transform cannot re-widen request #1", async () => {
+  const ctx = createFakeCtx();
+  ctx.on("system-prompt/assemble", async (_assembly, _context, next) => {
+    const assembled = await next();
+    return {
+      ...assembled,
+      sections: [...(assembled.sections ?? []), { text: "extra guidance" }],
+      tools: [...(assembled.tools ?? []), { name: "web_search", description: "search" }]
+    };
+  });
+  apply(ctx, {});
+  assert.equal(ctx.registeredSections[0]?.complete, true);
+  assert.equal(ctx.registeredSections[0]?.name, COMPLETE_SECTION_NAME);
+
+  const first = await ctx.assemble(
+    { agent: session([]) },
+    { sections: [{ text: "identity" }], tools: FULL_TOOLS }
+  );
+  assert.deepEqual(
+    first.tools.map((tool) => tool.name),
+    ["bash", "str_replace_editor"]
+  );
+  assert.deepEqual(
+    first.sections.map((section) => section.text),
+    [RL_PERSONA]
+  );
 });
 
 test("apply(): assemble filter failure exposes the full catalog once", async () => {
@@ -228,7 +299,7 @@ test("apply(): assemble filter failure exposes the full catalog once", async () 
   assert.match(warnings[0], /exposing the full catalog/);
 });
 
-test("apply() appends per-turn snapshots when DSH_CC_SNAPSHOT_FILE is set", async () => {
+test("apply() appends pre-step and request/header snapshots when DSH_CC_SNAPSHOT_FILE is set", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-boot-snap-"));
   const file = path.join(dir, "snap.jsonl");
   const previous = process.env.DSH_CC_SNAPSHOT_FILE;
@@ -238,20 +309,47 @@ test("apply() appends per-turn snapshots when DSH_CC_SNAPSHOT_FILE is set", asyn
     apply(ctx, {});
     const agent = session([]);
     await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: FULL_TOOLS });
+    const injected = {
+      kind: "enter",
+      messages: [
+        { source: { kind: "user" }, content: "task" },
+        { source: { kind: "skill-catalog" }, content: "skills" },
+        { source: { kind: "agent-instructions" }, content: "AGENTS.md" }
+      ]
+    };
+    const stripped = await ctx.preStep(agent, injected);
+    assert.deepEqual(
+      stripped.messages.map((message) => message.source.kind),
+      ["user"]
+    );
+    ctx.emitSessionEvent(agent.session, {
+      type: "request/header",
+      data: { model: "deepseek-v4-pro", maxTokens: 256000, reasoningEffort: "max" }
+    });
+
     agent.session.events.push({ type: "assistant/message" });
     await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: FULL_TOOLS });
+    await ctx.preStep(agent, injected);
+
     const lines = fs
       .readFileSync(file, "utf8")
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    assert.equal(lines[0].turn, 1);
-    assert.equal(lines[0].promoted, false);
-    assert.deepEqual(lines[0].toolNames, ["bash", "str_replace_editor"]);
-    assert.deepEqual(lines[0].systemTexts, [RL_PERSONA]);
-    assert.equal(lines[1].turn, 2);
-    assert.equal(lines[1].promoted, true);
-    assert.deepEqual(lines[1].toolNames, ["bash", "str_replace_editor", "read", "web_search"]);
+    const firstPreStep = lines.find((line) => line.source === "pre-step" && line.turn === 1);
+    const firstHeader = lines.find((line) => line.source === "request" && line.turn === 1);
+    const secondPreStep = lines.find((line) => line.source === "pre-step" && line.turn === 2);
+    assert.equal(firstPreStep.promoted, false);
+    assert.deepEqual(firstPreStep.toolNames, ["bash", "str_replace_editor"]);
+    assert.deepEqual(firstPreStep.systemTexts, [RL_PERSONA]);
+    assert.deepEqual(firstPreStep.contextSourceKinds, []);
+    assert.equal(firstHeader.model, "deepseek-v4-pro");
+    assert.equal(firstHeader.maxTokens, 256000);
+    assert.equal(firstHeader.reasoningEffort, "max");
+    assert.deepEqual(firstHeader.contextSourceKinds, []);
+    assert.equal(secondPreStep.promoted, true);
+    assert.deepEqual(secondPreStep.toolNames, ["bash", "str_replace_editor", "read", "web_search"]);
+    assert.deepEqual(secondPreStep.contextSourceKinds.sort(), ["agent-instructions", "skill-catalog"]);
   } finally {
     if (previous === undefined) {
       delete process.env.DSH_CC_SNAPSHOT_FILE;

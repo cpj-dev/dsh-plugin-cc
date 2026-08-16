@@ -1,9 +1,10 @@
 /**
- * Reduce a DSH assemble + request payload into a small, comparable snapshot
- * of what the model would see. Used by tests and by the optional recorder
- * (`DSH_CC_SNAPSHOT_FILE`) — not a substitute for session JSONL
- * `request/header`, but enough to catch harness identity, extra context
- * sources, and a widened tool catalog without a live LLM.
+ * Reduce model-visible prompt pieces into a small, comparable snapshot.
+ * The bootstrap plugin records after `agent/pre-step` (context kinds) and
+ * again on session `request/header` (model / maxTokens / effort). Assemble
+ * alone cannot see `agent-instructions` / `skill-catalog` — those are
+ * injected at pre-step — so do not treat an assemble-time empty
+ * `contextSourceKinds` as proof the strip worked.
  */
 
 import { createHash } from "node:crypto";
@@ -46,13 +47,14 @@ function toolName(tool) {
   return typeof tool?.name === "string" ? tool.name : "";
 }
 
-function collectSourceKinds(assembled, request) {
+function collectSourceKinds(assembled, request, messages) {
   const kinds = [];
   const bags = [
     assembled?.contexts,
     assembled?.messages,
     request?.messages,
-    request?.contexts
+    request?.contexts,
+    messages
   ];
   for (const bag of bags) {
     if (!Array.isArray(bag)) {
@@ -60,7 +62,9 @@ function collectSourceKinds(assembled, request) {
     }
     for (const item of bag) {
       const kind = item?.source?.kind;
-      if (typeof kind === "string" && kind.length > 0) {
+      // `user` is the task itself. This field is for auto-injected context
+      // (skill-catalog, agent-instructions, …) that bootstrap must strip.
+      if (typeof kind === "string" && kind.length > 0 && kind !== "user") {
         kinds.push(kind);
       }
     }
@@ -71,25 +75,34 @@ function collectSourceKinds(assembled, request) {
 /**
  * @param {object} input
  * @param {object} [input.assembled] system-prompt/assemble result
- * @param {object} [input.request] agent/request result
+ * @param {object} [input.request] request/header (or llm/stream) payload
+ * @param {object[]} [input.messages] final pre-step messages
  * @param {number} [input.turn]
  * @param {boolean} [input.promoted]
+ * @param {string} [input.source] assemble | pre-step | request
  */
 export function snapshotFromAssembleAndRequest({
   assembled = null,
   request = null,
+  messages = null,
   turn = 1,
-  promoted = null
+  promoted = null,
+  source = "assemble"
 } = {}) {
-  const tools = Array.isArray(assembled?.tools) ? assembled.tools : [];
+  const tools = Array.isArray(request?.tools)
+    ? request.tools
+    : Array.isArray(assembled?.tools)
+      ? assembled.tools
+      : [];
   const sections = Array.isArray(assembled?.sections) ? assembled.sections : [];
   return {
     turn,
     promoted,
+    source,
     systemTexts: sections.map(sectionText).filter((text) => text.length > 0),
     toolNames: tools.map(toolName).filter((name) => name.length > 0),
     toolSchemaHashes: tools.map(hashToolSchema),
-    contextSourceKinds: collectSourceKinds(assembled, request),
+    contextSourceKinds: collectSourceKinds(assembled, request, messages),
     maxTokens: request?.maxTokens ?? request?.config?.maxTokens ?? null,
     model: request?.model ?? assembled?.model ?? null,
     reasoningEffort: request?.reasoningEffort ?? request?.config?.reasoningEffort ?? null

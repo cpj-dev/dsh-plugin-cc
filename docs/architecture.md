@@ -52,7 +52,7 @@ Each of these is a design decision downstream of a verified DSH behavior (all pi
 
 - `dsh-bridge.mjs` — dispatch, argument surface, job orchestration. Knows nothing about DSH argv details.
 - `lib/dsh.mjs` — the only file that composes DSH invocations (binary resolution, headless argv, overlays, output parsing, profile probes).
-- `lib/tool-bootstrap.mjs` / `lib/request-snapshot.mjs` — Cordis plugin inserted by the mode overlay (complete persona, assemble filter, optional `DSH_CC_SNAPSHOT_FILE` recorder). Copied next to generated yaml so `--patch` insert `name` is self-contained.
+- `lib/tool-bootstrap.mjs` / `lib/request-snapshot.mjs` — Cordis plugin inserted by the mode overlay (complete persona via `systemPrompt.section`, outermost assemble filter, assemble-time phase freeze, optional `DSH_CC_SNAPSHOT_FILE` recorder after pre-step / `request/header`). Copied next to generated yaml so `--patch` insert `name` is self-contained.
 - `lib/broker-client.mjs` — the only file that talks to the broker socket.
 - `lib/git.mjs`, `lib/claude-session-transfer.mjs` — context collection (git diffs, transcript digests).
 - `lib/state.mjs`, `lib/tracked-jobs.mjs`, `lib/job-control.mjs` — durable job state and lifecycle.

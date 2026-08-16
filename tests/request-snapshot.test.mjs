@@ -21,6 +21,7 @@ test("snapshotFromAssembleAndRequest always emits the P0 field set", () => {
       "model",
       "promoted",
       "reasoningEffort",
+      "source",
       "systemTexts",
       "toolNames",
       "toolSchemaHashes",
@@ -88,6 +89,22 @@ test("snapshotFromAssembleAndRequest extracts system, tools, and context kinds",
   assert.equal(snapshot.model, "deepseek-v4-pro");
   assert.equal(snapshot.reasoningEffort, "max");
   assert.equal(snapshot.promoted, false);
+  assert.equal(snapshot.source, "assemble");
+});
+
+test("snapshotFromAssembleAndRequest reads context kinds from final pre-step messages", () => {
+  const snapshot = snapshotFromAssembleAndRequest({
+    assembled: { sections: [{ text: "You are a helpful software engineer assistant." }], tools: [{ name: "bash" }] },
+    messages: [
+      { source: { kind: "user" } },
+      { source: { kind: "skill-catalog" } }
+    ],
+    source: "pre-step",
+    promoted: false
+  });
+  assert.deepEqual(snapshot.contextSourceKinds, ["skill-catalog"]);
+  assert.equal(snapshot.source, "pre-step");
+  assert.equal(snapshot.model, null);
 });
 
 test("appendSnapshot writes JSONL when a path is given", () => {
