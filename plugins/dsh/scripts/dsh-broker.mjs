@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Per-workspace broker for multi-turn DSH sessions (Codex app-server-broker
- * pattern). Owns one long-lived `dsh --profile cc` runtime speaking the DSH
- * SDK wire protocol (newline JSON-RPC 2.0 over stdio) and serves bridge
- * requests on a unix socket with line-delimited JSON-RPC.
+ * pattern; openai/codex-plugin-cc is Apache-2.0 — architectural inspiration
+ * only, see NOTICE). Owns one long-lived `dsh --profile cc` runtime speaking
+ * the DSH SDK wire protocol (newline JSON-RPC 2.0 over stdio) and serves
+ * bridge requests on a unix socket with line-delimited JSON-RPC.
  *
  * Why it exists: the DSH SDK server get-or-creates agents by sessionId
  * *inside one live process*, and headless has no --resume — cross-process
@@ -18,6 +19,8 @@
  * - run-to-idle: wait for the `agent/inbox/spliced` event whose
  *   data.inserted[].id === messageId, then collect until `idle`; the final
  *   response is the last `assistant/message` event's text blocks.
+ *   Follows the published DeepSeek SDK client algorithm (MIT); the TypeScript
+ *   SDK is not vendored. See NOTICE.
  * - No cancel method: abandoning a turn means killing this runtime.
  *
  * Usage: node dsh-broker.mjs serve --cwd <workspace> --state-dir <dir>

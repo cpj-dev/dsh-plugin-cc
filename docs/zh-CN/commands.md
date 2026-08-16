@@ -2,13 +2,23 @@
 
 [English](../commands.md) | [简体中文](commands.md)
 
-最后同步：2026-08-15。
+最后同步：2026-08-16。
 
 每个 `/dsh:*` 命令对应一个 `dsh-bridge.mjs` 子命令。`plugins/dsh/commands/` 中的 Markdown 只定义调用措辞和展示方式；本页是参数行为的中文参考。所有命令都接受 `--json`（输出机器可读数据）和 `--cwd <dir>`。
 
 ## Agent 模式
 
-dsh 在 **minimal** 模式下整体能力表现更好，因此插件默认使用它：固定的一句话 persona，且只保留两个工具（bash + `str_replace_editor`），通过生成的 `--patch` 覆盖层禁用 dsh-base 组合中的其余部分。**standard** 是未修改的完整工具集（文件检索、网页搜索、skills、子代理、plan/goal 工具），随时可切换。解析顺序：每次运行的 `--mode minimal|standard` > 环境变量 `DSH_CC_MODE` > `/dsh:setup --mode <m>` 持久化的机器默认 > 内置 `minimal`。一次性运行按次选模式；broker（`--session`/`--resume`/`import`）在进程启动时组合模式并保持不变——请求解析出的模式与活 broker 不一致时会报错并提示 `/dsh:stop --broker`（停止会丢弃内存中的会话）。插件的 minimal 有意保留沙箱文件系统栈（`DSH_PERMISSION_MODE` 仍是安全边界）、一次性 bash 和上下文压缩；bash 的 `run_in_background` 参数也一并移除——收取后台任务的 job 工具已随工具集禁用。继承的 `DSH_TOOLS_MODE` 会从每次 dsh spawn 的环境中剥除——模式的所有权归 `--mode`。组合的模式事后可观测：run/review/critique 的 JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组合的模式，而非请求值），渲染的任务 footer 把两个正交事实分开标注——`agent mode: minimal · sandbox: read-only`。
+| 模式 | 默认？ | 模型看到什么 |
+|---|---|---|
+| `standard` | **是** | 从请求 #1 起完整 dsh-base 目录。不加 mode overlay。 |
+| `minimal` | 否 | 全程仅 bash + `str_replace_editor`。额外工具在组合层关掉，后面不会出现。 |
+| `anchored-standard` | 否 | 同一 session 出现耐久的 `tool/call` 或 `assistant/message` 之前仍是两件套；下一次 assemble 恢复完整目录。registry 保持挂载——这是过滤器，不是再试一次。 |
+
+解析顺序：每次运行的 `--mode` > 环境变量 `DSH_CC_MODE` > `/dsh:setup --mode <m>` > 内置 `standard`。一次性运行按次选模式。broker（`--session`/`--resume`/`import`）在启动时组合模式并保持不变——不一致时报错并提示 `/dsh:stop --broker`（停止会丢弃内存会话）。`--resume --mode` 会被忽略。继承的 `DSH_TOOLS_MODE` 会从每次 dsh spawn 中剥除。
+
+JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组合的模式）。任务 footer 把两个正交事实分开：`agent mode: standard · sandbox: read-only`。
+
+`minimal` 与 `anchored-standard` 都会收紧 persona（关闭 `includeHarnessIdentity` / `includeRuntimeContext`），并插入 `lib/tool-bootstrap.mjs`：注册 `complete: true` persona section，并以最外层 assemble 过滤把系统提示收成一句 RL sentence（headless/cc 不能挂 `dsh-persona`）。`minimal` 还会禁用其余 dsh-base 工具行，并关掉 bash `run_in_background`。`anchored-standard` 在晋升前于 `tools/pre-execute` 拒绝隐藏工具（phase 在 assemble 时冻结，因为 rc.6 会在 execute 之前写入当前响应），并剥掉 `agent-instructions` / `skill-catalog`。可选 `DSH_CC_SNAPSHOT_FILE` 在 pre-step 之后以及 `request/header` 时追加 JSONL。两种切换模式都不会改用官方 PTY bash 或 `dsh-fs-local`。
 
 ## `/dsh:check` → `check`
 
@@ -20,7 +30,7 @@ dsh 在 **minimal** 模式下整体能力表现更好，因此插件默认使用
 |---|---|
 | 无 | 一键安装：把 `@deepseek-ai/dsh@<HARNESS_NPM_VERSION>` 装进插件数据目录的 npm prefix，写成 wrapper，并创建 `cc` profile。也会把已持久化的源码安装（旧版 `harnessCheckout`，或 `dshInstall: harness`）迁移到该 pin。已通过 `DSH_BINARY` 或 PATH 找到 `dsh` 时跳过 CLI 安装。版本是精确 pin，不跟随 `latest`/`next` |
 | `--harness <checkout-path>` | 使用**已经构建好**的 DeepSeek Harness 源码目录：校验 `apps/cli/lib/bin.js` 和 `packages/sdk/server` 存在（插件不再代跑 `pnpm install` / `build:lib`，缺 SDK server 时也不会静默回退到 npm），生成 Node wrapper，并把 `dshBinary`、`dshInstall: harness`、`harnessCheckout` 写入 `config.json`。只有这次传入该参数才会保留源码路径；之后无参数 setup 会迁移到 npm |
-| `--mode minimal\|standard` | 持久化本机默认 Agent 模式（写入 `config.json` 的 `defaultMode`）；每次运行的 `--mode` 和 `DSH_CC_MODE` 仍然优先。见上文「Agent 模式」 |
+| `--mode minimal\|standard\|anchored-standard` | 持久化本机默认 Agent 模式（写入 `config.json` 的 `defaultMode`）；每次运行的 `--mode` 和 `DSH_CC_MODE` 仍然优先。见上文「Agent 模式」 |
 
 `/dsh:setup` 仍会执行 `dsh plugin --profile cc add`，装入 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` **以及该包已发布的 peerDependencies**——SDK server 不在 CLI 依赖闭包里，launcher 的 profile self-heal 也不会提供这些 peers（只 add server 会在启动时出现 `Cannot find package '@deepseek-ai/dsh-sdk-protocol'`）。`--harness` 则从检出目录 `link:` 安装 `packages/sdk/server`。随后写入受管 patch 块（标记 `# managed by dsh-plugin-cc`），并用 `--dump-config` 验证。运行 Harness 需要 Node >= 22.19；默认 CLI 安装需要 `npm`；`dsh plugin add` 需要 `pnpm`（`corepack enable`）。CLI pin 与 profile 身份未变时重复执行是安全的；pin 升级、从 npm 切到 `--harness`、或 checkout A → B 都会重新 add SDK server。`sdkProfileVersion` 保存该身份（`npm:<pin>` 或 `harness:<realpath>`），只在 `plugin add` 成功后写入，因此刷新失败后重试仍会 add，即使 `--dump-config` 里已有包名。
 
@@ -32,7 +42,7 @@ dsh 在 **minimal** 模式下整体能力表现更好，因此插件默认使用
 | `--base <ref>` | 相对指定 ref 审查分支；默认自动检测远端 HEAD、`main` 或 `master` |
 | `--scope auto\|working-tree\|branch` | 目标范围；`auto` 优先审查未提交改动 |
 | `--model <name>`、`--effort low\|medium\|high\|max` | 本次运行的模型配置 |
-| `--mode minimal\|standard` | 本次运行的 Agent 模式（默认 `minimal`；见上文「Agent 模式」） |
+| `--mode minimal\|standard\|anchored-standard` | 本次运行的 Agent 模式（默认 `standard`；见上文「Agent 模式」） |
 | `--background` | 后台排队并返回 run ID；`--wait` 强制前台等待 |
 
 两者都在只读沙箱中一次性执行。`review` 返回自由文本；`critique` 使用 JSON schema 约束结构化 finding，并在模型不满足格式时回退为原始文本。
@@ -49,7 +59,7 @@ dsh 在 **minimal** 模式下整体能力表现更好，因此插件默认使用
 | `--resume`、`--resume-last` | 恢复最近的 dsh 会话；会校验当前 broker runtime generation，broker 已停止或重启时明确报错，不会静默创建新会话 |
 | `--fresh` | 强制走一次性运行路径 |
 | `--model`、`--effort` | 仅用于一次性运行；恢复会话沿用 broker 启动配置 |
-| `--mode minimal\|standard` | Agent 模式（默认 `minimal`；见上文「Agent 模式」）。`--session` 解析出的模式与活 broker 不一致时报错；恢复会话沿用 broker 启动模式 |
+| `--mode minimal\|standard\|anchored-standard` | Agent 模式（默认 `standard`；见上文「Agent 模式」）。`--session` 解析出的模式与活 broker 不一致时报错；恢复会话沿用 broker 启动模式 |
 | `--background` | 分离到后台执行并返回 run ID |
 | `--timeout-ms <n>` | broker 单轮超时，默认 20 分钟；必须为正整数，并会转发到 broker |
 

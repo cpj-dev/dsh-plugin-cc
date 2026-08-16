@@ -1,6 +1,6 @@
 # Architecture
 
-The plugin is an external-CLI bridge, the same shape as the Codex and Grok Build Claude Code plugins: Claude Code slash commands run one Node script (`dsh-bridge.mjs`), and that script drives DeepSeek Harness. Nothing in this repo modifies DSH; every capability composes from DSH's public CLI and SDK wire protocol.
+The plugin is an external-CLI bridge, the same shape as the Codex and Grok Build Claude Code plugins: Claude Code slash commands run one Node script (`dsh-bridge.mjs`), and that script drives DeepSeek Harness. Nothing in this repo modifies DSH; every capability composes from DSH's public CLI and SDK wire protocol. Third-party copyrights and design provenance (including the anchored-standard mechanism port) are recorded in [NOTICE](../NOTICE).
 
 ## Two drive paths
 
@@ -12,7 +12,7 @@ scripts/dsh-bridge.mjs  (subcommand dispatcher; stdout = user-facing result)
         │
         ├── one-shot path ──► spawn: dsh --profile headless
         │                       --patch <generated unattended overlay (per mode)>
-        │                       [--patch <generated agent-mode overlay (minimal default)>]
+        │                       [--patch <generated agent-mode overlay (none for standard; minimal / anchored-standard opt-in)>]
         │                       [--patch <generated model overlay>] -- "<prompt>"
         │                       env DSH_PERMISSION_MODE=read-only|workspace-write
         │                     (review, critique, fresh run, import digest source)
@@ -35,7 +35,7 @@ Each of these is a design decision downstream of a verified DSH behavior (all pi
 
 - **A generated unattended overlay on every dsh spawn (one-shot AND broker runtime).** The dsh-base approval policy is `ask`, which fails closed with no approval answerer composed — and dsh-base's permission-presets service refuses to boot when the composed sandbox+approval pair names no preset, and pins the default preset's knobs into fresh sessions. The bridge therefore generates a per-mode overlay (`approval.policy: never` plus a single `unattended` preset exactly matching the launch mode) instead of shipping a static file; the sandbox mode (via `DSH_PERMISSION_MODE`) remains the real safety boundary.
 - **Model selection is a generated `--patch` overlay.** Headless has no `--model` flag; model/effort live in the `agent-default-model` and `llm-deepseek` config rows, and `--patch` is the last composition layer, so a temp overlay wins deterministically.
-- **Agent mode is a generated `--patch` overlay too, defaulting to minimal.** dsh shows better overall capability in minimal mode, so the plugin composes it by default: the overlay fixes the persona and disables every model-facing dsh-base row except bash and `str_replace_editor`. DSH's own preset roster (`dsh-agent-presets`) is unreachable from both plugin paths — the headless bundle and the SDK JSON-RPC server deliberately mount no preset — so the mode lives at the composition layer the plugin does control. A broker's mode is fixed at spawn (same lifecycle as its permission mode); `standard` is the untouched composition, one `--mode` away.
+- **Agent mode is a generated `--patch` overlay too, defaulting to standard.** `standard` is the untouched composition (full catalog from request #1). `minimal` and `anchored-standard` are opt-in. `minimal` fixes the persona (`includeHarnessIdentity` / `includeRuntimeContext` off), disables every model-facing dsh-base row except bash and `str_replace_editor`, and inserts `lib/tool-bootstrap.mjs` so assemble sections collapse to one `complete: true` RL sentence. Extra tools stay uncomposed, so the plugin's later promotion cannot widen that catalog. `anchored-standard` keeps the full registry mounted, uses the same persona/runtime-context flags, and inserts the same plugin, which filters the model-visible catalog to the Minimal pair until that session records a durable `tool/call` or `assistant/message`, then returns the assembled catalog. DSH's own preset roster (`dsh-agent-presets`) is unreachable from both plugin paths — the headless bundle and the SDK JSON-RPC server deliberately mount no preset — so the mode lives at the composition layer the plugin does control. `@deepseek-ai/dsh-persona` cannot be inserted here (it is scope-only and collides with the deployment persona). Official Web Minimal's persistent PTY bash and `dsh-fs-local` are also out of scope (sandbox boundary). A broker's mode is fixed at spawn (same lifecycle as its permission mode).
 - **The broker hand-rolls the SDK wire client.** The protocol is three requests and four notifications over newline JSON-RPC; embedding ~150 lines keeps the plugin dependency-free (both reference plugins made the same call). The run-to-idle algorithm is a direct port of the TypeScript SDK's `HarnessSession.run`: wait for the prompt's `agent/inbox/spliced` receipt, collect `session.event`s, stop at `session.status: idle`, extract the last `assistant/message` text.
 - **Stop = kill.** The SDK wire has no cancel or session-close method; aborting a mid-turn broker run means killing the runtime, which discards its in-memory sessions. The bridge makes this explicit rather than pretending to cancel.
 - **Structured critique output is prompt-contract, not API.** DSH has no structured-output flag, so the JSON schema is embedded in the prompt and the parser tolerates bare JSON, fenced blocks, and brace-span extraction, falling back to raw text.
@@ -52,9 +52,10 @@ Each of these is a design decision downstream of a verified DSH behavior (all pi
 
 - `dsh-bridge.mjs` — dispatch, argument surface, job orchestration. Knows nothing about DSH argv details.
 - `lib/dsh.mjs` — the only file that composes DSH invocations (binary resolution, headless argv, overlays, output parsing, profile probes).
+- `lib/tool-bootstrap.mjs` / `lib/request-snapshot.mjs` — Cordis plugin inserted by the mode overlay (complete persona via `systemPrompt.section`, outermost assemble filter, assemble-time phase freeze, optional `DSH_CC_SNAPSHOT_FILE` recorder after pre-step / `request/header`). Copied next to generated yaml so `--patch` insert `name` is self-contained.
 - `lib/broker-client.mjs` — the only file that talks to the broker socket.
 - `lib/git.mjs`, `lib/claude-session-transfer.mjs` — context collection (git diffs, transcript digests).
 - `lib/state.mjs`, `lib/tracked-jobs.mjs`, `lib/job-control.mjs` — durable job state and lifecycle.
 - `lib/render.mjs` — all user-facing text.
 
-Keeping DSH knowledge inside `dsh.mjs` and `dsh-broker.mjs` means a DSH upgrade audit touches exactly two files plus [dsh-compat.md](dsh-compat.md).
+Keeping DSH knowledge inside `dsh.mjs`, `dsh-broker.mjs`, and the inserted bootstrap plugin means a DSH upgrade audit touches those files plus [dsh-compat.md](dsh-compat.md).

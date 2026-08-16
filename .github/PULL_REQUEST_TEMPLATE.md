@@ -11,6 +11,7 @@
 ## Safety and compatibility / 安全与兼容性
 
 - [ ] No credentials, private paths, generated output, or local notes are included / 不包含凭据、私有路径、生成文件或本地笔记
+- [ ] Third-party code, mechanism ports, and research sources are credited in `NOTICE` with the correct license / 第三方代码、机制移植和研究来源已在 `NOTICE` 中按正确许可证致谢
 - [ ] DSH assumptions are documented in `docs/dsh-compat.md`, when applicable / 如涉及 DSH 假设，已更新兼容性契约
 - [ ] Breaking changes and migration steps are described / 已说明破坏性变更和迁移步骤
 

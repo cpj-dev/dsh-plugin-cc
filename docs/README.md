@@ -22,6 +22,7 @@ This documentation set is layered for progressive disclosure: each layer answers
 
 - Current-state prose only: documents describe what the code does now, never the history of how it got there.
 - Every claim about DeepSeek Harness behavior cites [dsh-compat.md](dsh-compat.md) instead of restating it — that file is the single re-verification point on upgrades.
+- Third-party copyrights, licenses, and design provenance live in [NOTICE](../NOTICE). Name the project, license, and URL there; do not restate legal text in architecture pages.
 - Code and docs change in the same commit. A behavior change without its doc update is an incomplete change.
 - Keep layer discipline: command flags belong in commands.md, not architecture.md; DSH facts belong in dsh-compat.md, not scattered in code comments (code comments may summarize and link).
 

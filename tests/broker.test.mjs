@@ -76,19 +76,18 @@ test("broker multi-turn: session continuity, status, and shutdown", async () => 
     assert.equal(status.lastSessionId, fresh.sessionId);
     assert.equal(status.model, "deepseek-v4-pro", "broker sessions default to the plugin model");
     assert.equal(status.effort, "max", "broker sessions default to the plugin reasoning effort");
-    assert.equal(status.mode, "minimal", "broker sessions default to the plugin agent mode");
+    assert.equal(status.mode, "standard", "broker sessions default to the plugin agent mode");
 
-    // The mode overlay is composed into the runtime spawn itself.
+    // Standard applies no mode overlay; minimal/anchored-standard are opt-in.
     const runtimeArgv = readRuntimeArgv(binDir);
-    const modePatch = runtimeArgv.find((arg) => arg.endsWith("mode-minimal.yml"));
-    assert.ok(modePatch, `runtime argv carries the mode overlay: ${runtimeArgv.join(" ")}`);
-    assert.match(fs.readFileSync(modePatch, "utf8"), /- id: tool-fs\n  disabled: true/);
+    assert.ok(!runtimeArgv.some((arg) => arg.endsWith("mode-minimal.yml")));
+    assert.ok(!runtimeArgv.some((arg) => arg.endsWith("mode-anchored-standard.yml")));
 
-    // A live broker's mode is fixed at spawn: asking for the other mode is
+    // A live broker's mode is fixed at spawn: asking for another mode is
     // an explicit refusal, never a silent divergence or a restart.
     await assert.rejects(
-      () => ensureBroker(workspace, { permissionMode: "read-only", mode: "standard" }),
-      /runs mode minimal.*resolved mode standard.*\/dsh:stop --broker/s
+      () => ensureBroker(workspace, { permissionMode: "read-only", mode: "minimal" }),
+      /runs mode standard.*resolved mode minimal.*\/dsh:stop --broker/s
     );
 
     assert.equal(await stopBroker(workspace), true);
@@ -96,24 +95,64 @@ test("broker multi-turn: session continuity, status, and shutdown", async () => 
   });
 });
 
-test("a standard-mode broker composes no mode overlay and refuses a minimal request", async () => {
+test("a minimal-mode broker composes the two-tool overlay and refuses a standard request", async () => {
   const dataDir = makeTempDir();
-  const workspace = makeTempDir("ws-broker-standard-");
+  const workspace = makeTempDir("ws-broker-minimal-");
   const binDir = makeTempDir("bin-");
   const wrapper = writeFakeRuntimeWrapper(binDir);
 
   await withEnv({ CLAUDE_PLUGIN_DATA: dataDir, DSH_BINARY: wrapper }, async () => {
-    const socketPath = await ensureBroker(workspace, { permissionMode: "read-only", mode: "standard" });
+    const socketPath = await ensureBroker(workspace, { permissionMode: "read-only", mode: "minimal" });
     // The runtime child spawns lazily on the first run; force it so the
     // recorded argv exists.
     await brokerRequest(socketPath, "run", { prompt: "hello" }, { timeoutMs: 10_000 });
     const status = await getBrokerStatus(workspace);
-    assert.equal(status.mode, "standard");
-    assert.ok(!readRuntimeArgv(binDir).some((arg) => arg.endsWith("mode-minimal.yml")));
+    assert.equal(status.mode, "minimal");
+
+    const runtimeArgv = readRuntimeArgv(binDir);
+    const modePatch = runtimeArgv.find((arg) => arg.endsWith("mode-minimal.yml"));
+    assert.ok(modePatch, `runtime argv carries the mode overlay: ${runtimeArgv.join(" ")}`);
+    assert.match(fs.readFileSync(modePatch, "utf8"), /- id: tool-fs\n  disabled: true/);
+    assert.match(fs.readFileSync(modePatch, "utf8"), /id: cc-tool-bootstrap/);
+
+    await assert.rejects(
+      () => ensureBroker(workspace, { permissionMode: "read-only", mode: "standard" }),
+      /runs mode minimal.*resolved mode standard/s
+    );
+
+    assert.equal(await stopBroker(workspace), true);
+  });
+});
+
+test("an anchored-standard broker inserts the bootstrap overlay and refuses other modes", async () => {
+  const dataDir = makeTempDir();
+  const workspace = makeTempDir("ws-broker-anchored-");
+  const binDir = makeTempDir("bin-");
+  const wrapper = writeFakeRuntimeWrapper(binDir);
+
+  await withEnv({ CLAUDE_PLUGIN_DATA: dataDir, DSH_BINARY: wrapper }, async () => {
+    const socketPath = await ensureBroker(workspace, {
+      permissionMode: "read-only",
+      mode: "anchored-standard"
+    });
+    await brokerRequest(socketPath, "run", { prompt: "hello" }, { timeoutMs: 10_000 });
+    const status = await getBrokerStatus(workspace);
+    assert.equal(status.mode, "anchored-standard");
+
+    const runtimeArgv = readRuntimeArgv(binDir);
+    const modePatch = runtimeArgv.find((arg) => arg.endsWith("mode-anchored-standard.yml"));
+    assert.ok(modePatch, `runtime argv carries the anchored overlay: ${runtimeArgv.join(" ")}`);
+    const yaml = fs.readFileSync(modePatch, "utf8");
+    assert.match(yaml, /id: cc-tool-bootstrap/);
+    assert.match(yaml, /includeRuntimeContext: false/);
+    assert.match(yaml, /promoteOn: either/);
+    assert.doesNotMatch(yaml, /id: tool-fs\n  disabled: true/);
+    assert.ok(fs.existsSync(path.join(path.dirname(modePatch), "tool-bootstrap.mjs")));
+    assert.ok(fs.existsSync(path.join(path.dirname(modePatch), "request-snapshot.mjs")));
 
     await assert.rejects(
       () => ensureBroker(workspace, { permissionMode: "read-only", mode: "minimal" }),
-      /runs mode standard.*resolved mode minimal/s
+      /runs mode anchored-standard.*resolved mode minimal.*\/dsh:stop --broker/s
     );
 
     assert.equal(await stopBroker(workspace), true);

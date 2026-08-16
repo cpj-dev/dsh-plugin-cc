@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { makeTempDir, withEnv } from "./helpers.mjs";
 
@@ -13,6 +13,7 @@ import {
   buildModeOverlayYaml,
   DEFAULT_MODE,
   describeDshBinary,
+  formatSupportedModes,
   getDshAvailability,
   inspectHarnessCheckout,
   MINIMAL_MODE_DISABLED_ROWS,
@@ -23,6 +24,7 @@ import {
   resolveDshBinary,
   resolveMode,
   runHeadlessAgent,
+  SUPPORTED_MODES,
   writePluginConfig,
   writeModelOverlay,
   writeModeOverlay
@@ -91,39 +93,44 @@ test("parseStructuredOutput handles bare JSON, fences, brace spans, and garbage"
   assert.equal(garbage.rawOutput, "no json here");
 });
 
-test("normalizeMode accepts minimal/standard and rejects everything else", () => {
+test("normalizeMode accepts minimal/standard/anchored-standard and rejects everything else", () => {
   assert.equal(normalizeMode("minimal"), "minimal");
   assert.equal(normalizeMode(" Standard "), "standard");
+  assert.equal(normalizeMode("anchored-standard"), "anchored-standard");
   assert.equal(normalizeMode(null), null);
   assert.equal(normalizeMode(""), null);
   assert.throws(() => normalizeMode("code"), /Unsupported mode "code"/);
+  assert.match(formatSupportedModes(), /anchored-standard/);
+  assert.deepEqual(SUPPORTED_MODES, ["standard", "minimal", "anchored-standard"]);
 });
 
-test("resolveMode: flag > DSH_CC_MODE > plugin config > built-in minimal", async () => {
+test("resolveMode: flag > DSH_CC_MODE > plugin config > built-in standard", async () => {
   const dataDir = makeTempDir();
   await withEnv({ CLAUDE_PLUGIN_DATA: dataDir, DSH_CC_MODE: undefined }, () => {
-    assert.equal(DEFAULT_MODE, "minimal");
-    assert.equal(resolveMode({}), "minimal");
-
-    writePluginConfig({ defaultMode: "standard" });
+    assert.equal(DEFAULT_MODE, "standard");
     assert.equal(resolveMode({}), "standard");
-    assert.equal(resolveMode({ env: { DSH_CC_MODE: "minimal" } }), "minimal");
-    assert.equal(resolveMode({ flag: "standard", env: { DSH_CC_MODE: "minimal" } }), "standard");
+
+    writePluginConfig({ defaultMode: "minimal" });
+    assert.equal(resolveMode({}), "minimal");
+    assert.equal(resolveMode({ env: { DSH_CC_MODE: "anchored-standard" } }), "anchored-standard");
+    assert.equal(resolveMode({ flag: "minimal", env: { DSH_CC_MODE: "anchored-standard" } }), "minimal");
     assert.throws(() => resolveMode({ flag: "code" }), /Unsupported mode/);
     assert.throws(() => resolveMode({ env: { DSH_CC_MODE: "code" } }), /Unsupported mode/);
 
     // Persisted machine state must not brick every command.
     writePluginConfig({ defaultMode: "no-such-mode" });
-    assert.equal(resolveMode({}), "minimal");
+    assert.equal(resolveMode({}), "standard");
   });
 });
 
-test("mode overlay: standard is the untouched composition, minimal disables down to two tools", async () => {
+test("mode overlay: standard is untouched, minimal disables two-tool, anchored-standard inserts bootstrap", async () => {
   assert.equal(buildModeOverlayYaml("standard"), null);
 
   const yaml = buildModeOverlayYaml("minimal");
   assert.match(yaml, /id: system-prompt/);
   assert.match(yaml, /persona: 'You are a helpful software engineer assistant\.'/);
+  assert.match(yaml, /includeHarnessIdentity: false/);
+  assert.match(yaml, /includeRuntimeContext: false/);
   for (const id of MINIMAL_MODE_DISABLED_ROWS) {
     assert.match(yaml, new RegExp(`- id: ${id}\\n  disabled: true`), `row ${id} must be disabled`);
   }
@@ -134,6 +141,9 @@ test("mode overlay: standard is the untouched composition, minimal disables down
   // disabled while the jobs SERVICE stays composed, so a background call
   // would spawn an orphan the model can neither read nor kill.
   assert.match(yaml, /- id: tool-bash\n  config:\n    enableRunInBackground: false/);
+  // Complete persona is the shared bootstrap plugin (dsh-persona cannot mount).
+  assert.match(yaml, /id: cc-tool-bootstrap/);
+  assert.match(yaml, /promoteOn: either/);
   // The sandbox stack is the safety boundary and must stay composed.
   for (const kept of ["sandbox", "sandbox-policy", "bash-sandbox", "approval", "permission"]) {
     assert.ok(!MINIMAL_MODE_DISABLED_ROWS.includes(kept), `row ${kept} must stay enabled`);
@@ -142,8 +152,36 @@ test("mode overlay: standard is the untouched composition, minimal disables down
   const dir = makeTempDir();
   const file = writeModeOverlay(dir, "minimal");
   assert.equal(file, path.join(dir, "overlays", "mode-minimal.yml"));
-  assert.equal(fs.readFileSync(file, "utf8"), yaml);
+  const writtenMinimal = fs.readFileSync(file, "utf8");
+  assert.match(writtenMinimal, /id: cc-tool-bootstrap/);
+  assert.match(writtenMinimal, /includeRuntimeContext: false/);
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "tool-bootstrap.mjs")));
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "request-snapshot.mjs")));
   assert.equal(writeModeOverlay(dir, "standard"), null);
+
+  const anchoredYaml = buildModeOverlayYaml("anchored-standard", {
+    bootstrapModulePath: "/tmp/overlays/tool-bootstrap.mjs"
+  });
+  assert.match(anchoredYaml, /mode: anchored-standard/);
+  assert.match(anchoredYaml, /includeHarnessIdentity: false/);
+  assert.match(anchoredYaml, /includeRuntimeContext: false/);
+  assert.match(anchoredYaml, /id: cc-tool-bootstrap/);
+  assert.match(anchoredYaml, /name: '\/tmp\/overlays\/tool-bootstrap\.mjs'/);
+  assert.match(anchoredYaml, /promoteOn: either/);
+  assert.doesNotMatch(anchoredYaml, /id: tool-fs\n  disabled: true/);
+  assert.doesNotMatch(anchoredYaml, /id: tool-web\n  disabled: true/);
+  assert.doesNotMatch(anchoredYaml, /enableRunInBackground: false/);
+
+  const anchoredFile = writeModeOverlay(dir, "anchored-standard");
+  assert.equal(anchoredFile, path.join(dir, "overlays", "mode-anchored-standard.yml"));
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "tool-bootstrap.mjs")));
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "request-snapshot.mjs")));
+  const written = fs.readFileSync(anchoredFile, "utf8");
+  assert.match(written, /tool-bootstrap\.mjs/);
+  assert.match(written, /includeRuntimeContext: false/);
+
+  const copied = await import(pathToFileURL(path.join(dir, "overlays", "tool-bootstrap.mjs")).href);
+  assert.equal(copied.name, "dsh-plugin-cc-tool-bootstrap");
 });
 
 test("runHeadlessAgent applies the mode overlay and strips DSH_TOOLS_MODE", async () => {
@@ -230,7 +268,7 @@ test("bridge one-shot runs default to deepseek-v4-pro at effort max, overridable
   assert.doesNotMatch(patches, /deepseek-v4-pro/);
 });
 
-test("bridge one-shot runs default to minimal mode, switchable per run, env, and config", () => {
+test("bridge one-shot runs default to standard mode, switchable per run, env, and config", () => {
   const dir = makeTempDir();
   const workspace = makeTempDir("ws-mode-defaults-");
   const wrapper = writeFakeDshWrapper(dir);
@@ -247,45 +285,57 @@ test("bridge one-shot runs default to minimal mode, switchable per run, env, and
       .join("\n");
   };
 
-  // dsh shows better overall capability in minimal mode, so it is the default.
+  // Built-in default is standard: no mode overlay, full catalog from request #1.
   const defaulted = runBridge(["run", "task", "--json", "--cwd", workspace]);
   assert.equal(defaulted.status, 0, defaulted.stderr);
   let patches = readPatchYaml();
+  assert.doesNotMatch(patches, /mode: minimal/);
+  assert.doesNotMatch(patches, /mode: anchored-standard/);
+  assert.doesNotMatch(patches, /id: cc-tool-bootstrap/);
+  assert.equal(JSON.parse(defaulted.stdout).agentMode, "standard");
+
+  const minimal = runBridge(["run", "task", "--mode", "minimal", "--json", "--cwd", workspace]);
+  assert.equal(minimal.status, 0, minimal.stderr);
+  patches = readPatchYaml();
   assert.match(patches, /mode: minimal/);
   assert.match(patches, /persona: 'You are a helpful software engineer assistant\.'/);
   assert.match(patches, /- id: tool-fs\n  disabled: true/);
   assert.match(patches, /- id: tool-web\n  disabled: true/);
   assert.match(patches, /enableRunInBackground: false/);
-  // The composed mode is observable in the payload (--json prints the
-  // payload alone).
-  assert.equal(JSON.parse(defaulted.stdout).agentMode, "minimal");
-
-  const standard = runBridge(["run", "task", "--mode", "standard", "--json", "--cwd", workspace]);
-  assert.equal(standard.status, 0, standard.stderr);
-  assert.doesNotMatch(readPatchYaml(), /mode: minimal/);
-  assert.equal(JSON.parse(standard.stdout).agentMode, "standard");
+  assert.match(patches, /id: cc-tool-bootstrap/);
+  assert.equal(JSON.parse(minimal.stdout).agentMode, "minimal");
 
   // The rendered footer labels the agent mode and the sandbox apart.
-  const envStandard = runBridge(["run", "task", "--cwd", workspace], { DSH_CC_MODE: "standard" });
-  assert.equal(envStandard.status, 0, envStandard.stderr);
-  assert.doesNotMatch(readPatchYaml(), /mode: minimal/);
-  assert.match(envStandard.stdout, /agent mode: standard · sandbox: read-only/);
+  const envMinimal = runBridge(["run", "task", "--cwd", workspace], { DSH_CC_MODE: "minimal" });
+  assert.equal(envMinimal.status, 0, envMinimal.stderr);
+  assert.match(readPatchYaml(), /mode: minimal/);
+  assert.match(envMinimal.stdout, /agent mode: minimal · sandbox: read-only/);
 
   // A persisted machine default switches without a flag; the flag still wins.
-  fs.writeFileSync(path.join(dir, "config.json"), `${JSON.stringify({ defaultMode: "standard" }, null, 2)}\n`);
-  const configStandard = runBridge(["run", "task", "--cwd", workspace]);
-  assert.equal(configStandard.status, 0, configStandard.stderr);
-  assert.doesNotMatch(readPatchYaml(), /mode: minimal/);
-  const flagWins = runBridge(["run", "task", "--mode", "minimal", "--cwd", workspace]);
-  assert.equal(flagWins.status, 0, flagWins.stderr);
+  fs.writeFileSync(path.join(dir, "config.json"), `${JSON.stringify({ defaultMode: "minimal" }, null, 2)}\n`);
+  const configMinimal = runBridge(["run", "task", "--cwd", workspace]);
+  assert.equal(configMinimal.status, 0, configMinimal.stderr);
   assert.match(readPatchYaml(), /mode: minimal/);
-  assert.match(flagWins.stdout, /agent mode: minimal · sandbox: read-only/);
+  const flagWins = runBridge(["run", "task", "--mode", "standard", "--cwd", workspace]);
+  assert.equal(flagWins.status, 0, flagWins.stderr);
+  assert.doesNotMatch(readPatchYaml(), /mode: minimal/);
+  assert.match(flagWins.stdout, /agent mode: standard · sandbox: read-only/);
 
   const invalid = runBridge(["run", "task", "--mode", "code", "--cwd", workspace]);
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /Unsupported mode "code"/);
 
-  // Reviews ride the same default: the review run's patches carry minimal.
+  const anchored = runBridge(["run", "task", "--mode", "anchored-standard", "--json", "--cwd", workspace]);
+  assert.equal(anchored.status, 0, anchored.stderr);
+  const anchoredPatches = readPatchYaml();
+  assert.match(anchoredPatches, /mode: anchored-standard/);
+  assert.match(anchoredPatches, /id: cc-tool-bootstrap/);
+  assert.match(anchoredPatches, /promoteOn: either/);
+  assert.match(anchoredPatches, /includeRuntimeContext: false/);
+  assert.doesNotMatch(anchoredPatches, /id: tool-fs\n  disabled: true/);
+  assert.equal(JSON.parse(anchored.stdout).agentMode, "anchored-standard");
+
+  // Reviews ride the same default: no mode overlay.
   fs.rmSync(path.join(dir, "config.json"));
   const sh = (args) => {
     const result = spawnSync("git", args, { cwd: workspace, encoding: "utf8" });
@@ -297,7 +347,8 @@ test("bridge one-shot runs default to minimal mode, switchable per run, env, and
   sh(["add", "file.txt"]);
   const review = runBridge(["review", "--cwd", workspace]);
   assert.equal(review.status, 0, review.stderr);
-  assert.match(readPatchYaml(), /mode: minimal/);
+  assert.doesNotMatch(readPatchYaml(), /mode: minimal/);
+  assert.doesNotMatch(readPatchYaml(), /mode: anchored-standard/);
 });
 
 test("runHeadlessAgent surfaces nonzero exits with stderr", async () => {

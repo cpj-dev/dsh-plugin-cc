@@ -5,6 +5,7 @@
 - **Zero npm dependencies.** Plugin scripts run under whatever Node the user has (>= 20) with no install step; both reference plugins (Codex, Grok Build) made the same choice and it is why `/plugin install` just works. Hand-roll small things; if a change seems to need a dependency, it probably belongs in DSH itself.
 - **DSH knowledge stays in two files.** `scripts/lib/dsh.mjs` (CLI composition) and `scripts/dsh-broker.mjs` (SDK wire). Any other file needing a DSH fact indicates a layering leak.
 - **Every DSH assumption is a row in [dsh-compat.md](dsh-compat.md)** with a verification command. New assumption → new row, same commit.
+- **Third-party provenance goes in [NOTICE](../NOTICE).** Mechanism ports, research citations, and architectural inspiration are named there with the correct license and URL in the same commit. Do not guess MIT. See CONTRIBUTING.md ground rule 4.
 - **stdout discipline.** Bridge stdout is user-facing rendered text (or `--json` payloads); progress goes to stderr and the job log. Broker-runtime stdout is JSON-RPC only — never add a stdout logger to the `cc` profile.
 - **POSIX only for v1** (unix sockets, pgrep). Gate any Windows work behind its own design pass.
 
@@ -25,7 +26,7 @@
 
 1. `npm test` green.
 2. Manual acceptance checklist in [testing.md](testing.md) against the pinned dsh version.
-3. Docs synced (README tables, commands.md, dsh-compat.md pin).
+3. Docs synced (README tables, commands.md, dsh-compat.md pin). NOTICE still names every third-party source with the correct license.
 4. English and Simplified Chinese user-entry pages synced; relative links and community templates checked.
 5. `CHANGELOG.md` entry finalized, recording the pinned `@deepseek-ai/dsh` npm version used for acceptance.
 6. Version bumps (plugin.json, marketplace.json ×2, package.json) + tag.

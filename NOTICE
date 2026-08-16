@@ -1,14 +1,143 @@
 dsh-plugin-cc
+=============
 
-This repository's plugin layout, command-flow conventions, and job/state
-design follow the patterns established by two MIT-licensed Claude Code
-plugins:
+This product is licensed under the MIT License. See LICENSE.
 
-- xai-org/grok-build-plugin-cc (bridge command surface, detached run-worker
-  job model, session lifecycle hooks)
-- openai/codex-plugin-cc (unix-socket broker for a shared long-lived agent
-  runtime)
+This NOTICE file records third-party copyrights, licenses, and design
+provenance. It does not modify LICENSE.
 
-All source files in this repository are original implementations written
-against the DeepSeek Harness (deepseek-ai/deepseek-harness) public CLI and
-SDK wire protocol.
+This project is not affiliated with, endorsed by, or sponsored by DeepSeek,
+OpenAI, xAI, or the authors of the community projects listed below. Product
+and project names remain those of their respective owners.
+
+How to read this file
+---------------------
+
+- "Runtime" — used at execution time; not copied into this repository.
+- "Architectural inspiration" — layout or process ideas; source in this
+  repository is original.
+- "Mechanism port" — a protocol reimplemented here; upstream files are not
+  vendored.
+- "Research reference" — cited evidence; no code incorporated.
+- "Reviewed, not incorporated" — read while designing; not a dependency.
+
+
+This software
+-------------
+
+Copyright (c) 2026 dsh-plugin-cc contributors
+MIT License — LICENSE
+
+
+Runtime (not vendored)
+----------------------
+
+DeepSeek Harness
+  https://github.com/deepseek-ai/deepseek-harness
+  Copyright (c) 2026 DeepSeek
+  MIT License
+
+  This plugin composes the public CLI and SDK wire protocol. It does not
+  copy DeepSeek Harness source. `/dsh:setup` installs pinned npm packages
+  (`@deepseek-ai/dsh`, `@deepseek-ai/dsh-sdk-jsonrpc-server`, and that
+  server's published peerDependencies) into the user's plugin data dir and
+  `cc` profile.
+
+  The broker's run-to-idle loop in `plugins/dsh/scripts/dsh-broker.mjs`
+  follows the published SDK client algorithm (`HarnessSession.run`: wait
+  for the prompt's `agent/inbox/spliced` receipt, collect `session.event`s,
+  stop at `session.status: idle`). That TypeScript SDK is not vendored.
+
+
+Architectural inspiration (original source in this repo)
+--------------------------------------------------------
+
+openai/codex-plugin-cc
+  https://github.com/openai/codex-plugin-cc
+  Copyright 2026 OpenAI
+  Apache License 2.0
+  https://www.apache.org/licenses/LICENSE-2.0
+
+  Used as: unix-socket broker for a shared long-lived agent runtime.
+  No source files were copied.
+
+xai-org/grok-build-plugin-cc
+  https://github.com/xai-org/grok-build-plugin-cc
+  Copyright 2026 xAI
+  Apache License 2.0
+  https://www.apache.org/licenses/LICENSE-2.0
+
+  Used as: marketplace plugin layout, bridge command surface, detached
+  run-worker job model, and session lifecycle hooks.
+  No source files were copied.
+
+Because this repository does not redistribute those Apache-2.0 works or
+create a derivative of their source, the Apache license text is not
+reproduced here. The copyright and license identification are recorded
+for provenance.
+
+
+Mechanism port (reimplemented, not vendored)
+--------------------------------------------
+
+xiaobright/dsh-anchored-standard
+  https://github.com/xiaobright/dsh-anchored-standard
+  Copyright (c) 2026 xiaobright
+  Portions Copyright (c) 2026 DeepSeek
+  MIT License
+
+  `plugins/dsh/scripts/lib/tool-bootstrap.mjs` reimplements the
+  assemble-filter / per-session promotion protocol (bootstrap tool pair,
+  `promoteOn: either`, suppressed context sources, fail-open to the full
+  catalog) against this plugin's headless/cc `--patch` path.
+
+  It is not a copy of that Web agent preset. Differences that matter:
+
+  - no `dsh-agent-presets` install
+  - no resident / `dev_tool_search` catalog (this plugin restores the full
+    assembled Standard set after promotion — the Project2 98/99
+    configuration)
+  - sandboxed one-shot `tool-bash`, not persistent PTY bash
+  - no `dsh-fs-local`
+
+  Upstream NOTICE retains DeepSeek Harness Standard-preset copyright for
+  their adapted preset YAML. This plugin does not ship that YAML.
+
+
+Research references (no code incorporated)
+------------------------------------------
+
+xiaobright/modeltest
+  https://github.com/xiaobright/modeltest
+  Author: xiaobright
+
+  Documents cited while designing `--mode anchored-standard`:
+
+  - docs/v4.1/DEEPSEEK_V4_TRIGGER_MECHANISM_EXPERIMENTS_20260814.md
+  - docs/v4.1/DEEPSEEK_V4_PRO_HARNESS_ANALYSIS_20260814.md
+  - docs/v4.1/DEEPSEEK_V4_TRAJECTORY_ANALYSIS_20260814.md
+
+  Used as experimental evidence that DeepSeek V4 Pro conditions on the
+  first-request tool catalog. That repository had no LICENSE file at the
+  time of citation; it describes itself as a personal evaluation suite,
+  not a public benchmark. No source from that repository is shipped here.
+
+
+Related work reviewed and not incorporated
+------------------------------------------
+
+yjh051108/dsh-routing-suite
+  https://github.com/yjh051108/dsh-routing-suite
+  MIT License (per that repository's README)
+  Components: dsh-super-injector, dsh-router-standard, dsh-mode-boost
+
+  Reviewed while designing `--mode anchored-standard`. Not installed, not
+  vendored, and not used at runtime.
+
+
+Community documents
+-------------------
+
+Contributor Covenant, version 2.1
+  https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
+  See CODE_OF_CONDUCT.md (Attribution).

@@ -719,7 +719,7 @@ test("check reports an unsupported DSH_CC_MODE as not ready with a corrective st
   assert.equal(report.mode.ok, false);
   assert.equal(report.ready, false);
   assert.equal(report.multiTurnReady, false);
-  assert.ok(report.nextSteps.some((step) => step.includes("DSH_CC_MODE") && step.includes("minimal or standard")));
+  assert.ok(report.nextSteps.some((step) => step.includes("DSH_CC_MODE") && step.includes("anchored-standard")));
 
   const valid = runBridge(["check", "--json", "--cwd", workspace], { ...env, DSH_CC_MODE: "standard" }, workspace);
   const validReport = JSON.parse(valid.stdout);
@@ -757,6 +757,11 @@ test("setup --mode persists the machine default agent mode", (t) => {
   const back = runBridge(["setup", "--json", "--mode", "minimal", "--cwd", workspace], env, workspace);
   assert.equal(back.status, 0, back.stderr);
   assert.equal(readConfig().defaultMode, "minimal");
+
+  const anchored = runBridge(["setup", "--json", "--mode", "anchored-standard", "--cwd", workspace], env, workspace);
+  assert.equal(anchored.status, 0, anchored.stderr);
+  assert.equal(readConfig().defaultMode, "anchored-standard");
+  assert.equal(JSON.parse(anchored.stdout).mode.value, "anchored-standard");
 
   const invalid = runBridge(["setup", "--mode", "code", "--cwd", workspace], env, workspace);
   assert.notEqual(invalid.status, 0);
