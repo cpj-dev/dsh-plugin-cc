@@ -17,6 +17,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { describePluginBuild, readPluginManifest } from "../plugins/dsh/scripts/lib/plugin-meta.mjs";
+import { compareSemver, isVersionIncrease, parseSemver } from "../scripts/semver.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -70,6 +71,35 @@ test("the readiness report can name this build", () => {
   assert.equal(build.ok, true);
   assert.equal(build.version, version);
   assert.match(build.detail, new RegExp(`\\b${version.replace(/\./g, "\\.")}$`));
+});
+
+test("the CI guard orders releases by SemVer precedence, prereleases included", () => {
+  // The guard used to compare `version.split("-")[0]`, which makes a release
+  // and its own release candidate look identical and rejects the most ordinary
+  // bump there is — while this file's SEMVER pattern accepts prereleases.
+  const increases = [
+    ["1.0.0", "1.1.0"],
+    ["1.0.0", "2.0.0"],
+    ["1.0.9", "1.0.10"],
+    ["1.1.0-rc.1", "1.1.0"],
+    ["1.1.0-alpha", "1.1.0-beta"],
+    ["1.1.0-rc.1", "1.1.0-rc.2"],
+    ["1.1.0-rc.9", "1.1.0-rc.10"],
+    ["1.1.0-alpha", "1.1.0-alpha.1"],
+    ["1.1.0-alpha.1", "1.1.0-alpha.beta"]
+  ];
+  for (const [base, head] of increases) {
+    assert.equal(isVersionIncrease(base, head), true, `${base} -> ${head} should be an increase`);
+    assert.equal(isVersionIncrease(head, base), false, `${head} -> ${base} should not be an increase`);
+  }
+  for (const same of ["1.0.0", "1.1.0-rc.1"]) {
+    assert.equal(isVersionIncrease(same, same), false);
+    assert.equal(compareSemver(same, same), 0);
+  }
+  // Build metadata is ignored for precedence (SemVer §10).
+  assert.equal(compareSemver("1.0.0+build.7", "1.0.0"), 0);
+  assert.equal(parseSemver("nope"), null);
+  assert.throws(() => compareSemver("1.0", "1.0.0"), /not a semver version/);
 });
 
 test("an unreadable manifest degrades to a reported row, not a crash", () => {

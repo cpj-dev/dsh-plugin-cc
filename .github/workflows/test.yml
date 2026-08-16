@@ -51,14 +51,7 @@ jobs:
             echo "::error file=$manifest::This pull request changes shipped plugin files but leaves the version at $base_version. Bump plugin.json, marketplace.json (x2), and package.json, and add the CHANGELOG entry."
             exit 1
           fi
-          node -e '
-            const [base, head] = process.argv.slice(1);
-            const parse = (v) => v.split("-")[0].split(".").map(Number);
-            const [b, h] = [parse(base), parse(head)];
-            for (let i = 0; i < 3; i += 1) {
-              if (h[i] > b[i]) process.exit(0);
-              if (h[i] < b[i]) break;
-            }
-            console.error(`::error::Version ${head} does not sort above the base version ${base}.`);
-            process.exit(1);
-          ' "$base_version" "$head_version"
+          # Full SemVer precedence, prereleases included: 1.2.0-rc.1 -> 1.2.0 is
+          # an increase, and tests/version.test.mjs accepts prerelease versions,
+          # so this guard has to agree with it. Covered by that same suite.
+          node scripts/semver.mjs gt "$base_version" "$head_version"
