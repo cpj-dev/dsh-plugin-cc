@@ -13,6 +13,7 @@ import {
   buildModeOverlayYaml,
   DEFAULT_MODE,
   describeDshBinary,
+  formatSupportedModes,
   getDshAvailability,
   inspectHarnessCheckout,
   MINIMAL_MODE_DISABLED_ROWS,
@@ -23,6 +24,7 @@ import {
   resolveDshBinary,
   resolveMode,
   runHeadlessAgent,
+  SUPPORTED_MODES,
   writePluginConfig,
   writeModelOverlay,
   writeModeOverlay
@@ -91,12 +93,15 @@ test("parseStructuredOutput handles bare JSON, fences, brace spans, and garbage"
   assert.equal(garbage.rawOutput, "no json here");
 });
 
-test("normalizeMode accepts minimal/standard and rejects everything else", () => {
+test("normalizeMode accepts minimal/standard/anchored-standard and rejects everything else", () => {
   assert.equal(normalizeMode("minimal"), "minimal");
   assert.equal(normalizeMode(" Standard "), "standard");
+  assert.equal(normalizeMode("anchored-standard"), "anchored-standard");
   assert.equal(normalizeMode(null), null);
   assert.equal(normalizeMode(""), null);
   assert.throws(() => normalizeMode("code"), /Unsupported mode "code"/);
+  assert.match(formatSupportedModes(), /anchored-standard/);
+  assert.deepEqual(SUPPORTED_MODES, ["minimal", "standard", "anchored-standard"]);
 });
 
 test("resolveMode: flag > DSH_CC_MODE > plugin config > built-in minimal", async () => {
@@ -118,12 +123,14 @@ test("resolveMode: flag > DSH_CC_MODE > plugin config > built-in minimal", async
   });
 });
 
-test("mode overlay: standard is the untouched composition, minimal disables down to two tools", async () => {
+test("mode overlay: standard is untouched, minimal disables two-tool, anchored-standard inserts bootstrap", async () => {
   assert.equal(buildModeOverlayYaml("standard"), null);
 
   const yaml = buildModeOverlayYaml("minimal");
   assert.match(yaml, /id: system-prompt/);
   assert.match(yaml, /persona: 'You are a helpful software engineer assistant\.'/);
+  assert.match(yaml, /includeHarnessIdentity: false/);
+  assert.match(yaml, /includeRuntimeContext: false/);
   for (const id of MINIMAL_MODE_DISABLED_ROWS) {
     assert.match(yaml, new RegExp(`- id: ${id}\\n  disabled: true`), `row ${id} must be disabled`);
   }
@@ -144,6 +151,25 @@ test("mode overlay: standard is the untouched composition, minimal disables down
   assert.equal(file, path.join(dir, "overlays", "mode-minimal.yml"));
   assert.equal(fs.readFileSync(file, "utf8"), yaml);
   assert.equal(writeModeOverlay(dir, "standard"), null);
+
+  const anchoredYaml = buildModeOverlayYaml("anchored-standard", {
+    bootstrapModulePath: "/tmp/overlays/tool-bootstrap.mjs"
+  });
+  assert.match(anchoredYaml, /mode: anchored-standard/);
+  assert.match(anchoredYaml, /includeHarnessIdentity: false/);
+  assert.doesNotMatch(anchoredYaml, /includeRuntimeContext: false/);
+  assert.match(anchoredYaml, /id: cc-tool-bootstrap/);
+  assert.match(anchoredYaml, /name: '\/tmp\/overlays\/tool-bootstrap\.mjs'/);
+  assert.match(anchoredYaml, /promoteOn: either/);
+  assert.doesNotMatch(anchoredYaml, /id: tool-fs\n  disabled: true/);
+  assert.doesNotMatch(anchoredYaml, /id: tool-web\n  disabled: true/);
+
+  const anchoredFile = writeModeOverlay(dir, "anchored-standard");
+  assert.equal(anchoredFile, path.join(dir, "overlays", "mode-anchored-standard.yml"));
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "tool-bootstrap.mjs")));
+  assert.ok(fs.existsSync(path.join(dir, "overlays", "request-snapshot.mjs")));
+  const written = fs.readFileSync(anchoredFile, "utf8");
+  assert.match(written, /tool-bootstrap\.mjs/);
 });
 
 test("runHeadlessAgent applies the mode overlay and strips DSH_TOOLS_MODE", async () => {
@@ -284,6 +310,15 @@ test("bridge one-shot runs default to minimal mode, switchable per run, env, and
   const invalid = runBridge(["run", "task", "--mode", "code", "--cwd", workspace]);
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /Unsupported mode "code"/);
+
+  const anchored = runBridge(["run", "task", "--mode", "anchored-standard", "--json", "--cwd", workspace]);
+  assert.equal(anchored.status, 0, anchored.stderr);
+  const anchoredPatches = readPatchYaml();
+  assert.match(anchoredPatches, /mode: anchored-standard/);
+  assert.match(anchoredPatches, /id: cc-tool-bootstrap/);
+  assert.match(anchoredPatches, /promoteOn: either/);
+  assert.doesNotMatch(anchoredPatches, /id: tool-fs\n  disabled: true/);
+  assert.equal(JSON.parse(anchored.stdout).agentMode, "anchored-standard");
 
   // Reviews ride the same default: the review run's patches carry minimal.
   fs.rmSync(path.join(dir, "config.json"));

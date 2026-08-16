@@ -16,4 +16,4 @@ What it does, end to end (each step skipped when already done — rerunning is a
 
 After setup, the only remaining prerequisite is a `DEEPSEEK_API_KEY` (env var, `$DSH_HOME/.credentials.yaml`, or `.env`) — the report's next steps say so when it is missing.
 
-`--mode minimal|standard` persists this machine's default agent mode. The built-in default is `minimal` (dsh shows better overall capability there); `/dsh:setup --mode standard` opts the machine back into the full toolset, and per-run `--mode` still overrides.
+`--mode minimal|standard|anchored-standard` persists this machine's default agent mode. The built-in default is `minimal` (two tools for the whole run); `/dsh:setup --mode standard` opts the machine into the full toolset from request #1; `--mode anchored-standard` is the two-phase filter. Per-run `--mode` still overrides.

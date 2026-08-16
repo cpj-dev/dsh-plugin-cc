@@ -13,7 +13,7 @@ Argument handling:
 - Free text becomes the review focus (e.g. `/dsh:review concurrency in the session store`).
 - `--base <ref>` reviews the branch diff against that ref; `--scope working-tree|branch` forces a side.
 - `--model <name>` / `--effort low|medium|high|max` select the model for this run (defaults: `deepseek-v4-pro` at effort `max`).
-- `--mode minimal|standard` selects the agent mode (default `minimal` — dsh shows better overall capability there; the diff travels inside the prompt, and bash still covers ad-hoc digging. `standard` restores file/web search and the rest of the full toolset).
+- `--mode minimal|standard|anchored-standard` selects the agent mode (default `minimal` — two tools for the whole run; the diff travels inside the prompt, and bash still covers ad-hoc digging. `standard` restores file/web search from request #1. `anchored-standard` starts on the Minimal pair then restores the full catalog after the first tool call or assistant reply).
 - `--background` queues the review and returns a run id; check it later with `/dsh:runs`.
 
 The run is read-only and can take several minutes; prefer `--background` when the user wants to keep working. Present the review output verbatim, then add your own judgement only if the user asks.

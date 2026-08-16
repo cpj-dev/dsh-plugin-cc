@@ -12,3 +12,9 @@ plugins:
 All source files in this repository are original implementations written
 against the DeepSeek Harness (deepseek-ai/deepseek-harness) public CLI and
 SDK wire protocol.
+
+`plugins/dsh/scripts/lib/tool-bootstrap.mjs` ports the assemble-filter /
+per-session promotion idea from xiaobright/dsh-anchored-standard (MIT). It
+is not a copy of that Web agent preset; the code here targets headless/cc
+`--patch` composition and restores the full assembled catalog after
+promotion.

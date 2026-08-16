@@ -141,8 +141,8 @@ export function renderTaskResult({ rawOutput, failureMessage }, { title, jobId, 
     footer.push(`dsh session: ${dshSessionId} (continue with /dsh:run --resume)`);
   }
   // Two orthogonal facts, labeled apart: `agent mode` is the composed
-  // toolset (minimal|standard), `sandbox` the permission boundary — one
-  // ambiguous `mode:` key would conflate them.
+  // toolset (minimal|standard|anchored-standard), `sandbox` the permission
+  // boundary — one ambiguous `mode:` key would conflate them.
   if (agentMode) {
     footer.push(`agent mode: ${agentMode}`);
   }

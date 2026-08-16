@@ -45,7 +45,7 @@ Have your own built [deepseek-harness](https://github.com/deepseek-ai/deepseek-h
 | `/dsh:show [id]` | Stored result of a finished run | no |
 | `/dsh:stop [id]` / `--broker` | Kill a run's process tree / the shared broker | no |
 
-Runs default to the **minimal** agent mode — dsh shows better overall capability there (a one-line persona, bash + `str_replace_editor` only). Switch per run with `--mode standard` for the full toolset (file/web search, skills, subagents), or persist a machine default with `/dsh:setup --mode standard`.
+Runs default to the **minimal** agent mode (one-line persona, bash + `str_replace_editor` only, for the whole run). `--mode standard` is the full toolset from request #1. `--mode anchored-standard` keeps that full registry mounted but shows the model only the Minimal pair until the session records a tool call or assistant reply, then restores the complete catalog. Persist a machine default with `/dsh:setup --mode <m>`.
 
 Full command semantics: [docs/commands.md](docs/commands.md). Installation and runtime failures are covered in [docs/troubleshooting.md](docs/troubleshooting.md).
 

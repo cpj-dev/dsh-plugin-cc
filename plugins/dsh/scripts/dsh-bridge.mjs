@@ -40,6 +40,7 @@ import {
   inspectHarnessCheckout,
   installPinnedDshFromNpm,
   normalizeMode,
+  formatSupportedModes,
   normalizePermissionMode,
   normalizeReasoningEffort,
   parseStructuredOutput,
@@ -124,10 +125,10 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/dsh-bridge.mjs check [--json]",
-      "  node scripts/dsh-bridge.mjs setup [--harness <checkout-dir>] [--mode minimal|standard] [--json]",
-      "  node scripts/dsh-bridge.mjs review   [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>] [--mode minimal|standard]",
-      "  node scripts/dsh-bridge.mjs critique [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>] [--mode minimal|standard] [focus text]",
-      "  node scripts/dsh-bridge.mjs run [--background] [--write] [--session|--resume|--resume-last|--fresh] [--model <m>] [--effort <e>] [--mode minimal|standard] [prompt]",
+      "  node scripts/dsh-bridge.mjs setup [--harness <checkout-dir>] [--mode minimal|standard|anchored-standard] [--json]",
+      "  node scripts/dsh-bridge.mjs review   [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>] [--mode minimal|standard|anchored-standard]",
+      "  node scripts/dsh-bridge.mjs critique [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <m>] [--effort <e>] [--mode minimal|standard|anchored-standard] [focus text]",
+      "  node scripts/dsh-bridge.mjs run [--background] [--write] [--session|--resume|--resume-last|--fresh] [--model <m>] [--effort <e>] [--mode minimal|standard|anchored-standard] [prompt]",
       "  node scripts/dsh-bridge.mjs run-resume-candidate [--json]",
       "  node scripts/dsh-bridge.mjs import [--source <jsonl>] [--json]",
       "  node scripts/dsh-bridge.mjs runs [run-id] [--all] [--json]",
@@ -321,7 +322,7 @@ async function buildCheckReport(cwd, actionsTaken = []) {
   }
   if (!mode.ok) {
     nextSteps.push(
-      `DSH_CC_MODE is set to an unsupported value (${mode.detail}). Unset it or set it to minimal or standard, then rerun /dsh:check.`
+      `DSH_CC_MODE is set to an unsupported value (${mode.detail}). Unset it or set it to ${formatSupportedModes()}, then rerun /dsh:check.`
     );
   }
 

@@ -47,7 +47,7 @@
 | `/dsh:show [id]` | 查看已完成运行的结果 | 否 |
 | `/dsh:stop [id]` / `--broker` | 停止运行进程树或共享 broker | 否 |
 
-运行默认使用 **minimal** Agent 模式——dsh 在该模式下整体能力表现更好（一句话 persona，仅 bash + `str_replace_editor` 两个工具）。用 `--mode standard` 按次切换到完整工具集（文件/网页检索、skills、子代理），或用 `/dsh:setup --mode standard` 持久化本机默认。
+运行默认使用 **minimal** Agent 模式（一句话 persona，仅 bash + `str_replace_editor`，全程两工具）。`--mode standard` 从请求 #1 起使用完整工具集。`--mode anchored-standard` 保持完整 registry 挂载，但在该 session 出现工具调用或助手回复之前只向模型暴露两件套，随后恢复完整目录。用 `/dsh:setup --mode <m>` 持久化本机默认。
 
 完整参数见[中文命令参考](docs/zh-CN/commands.md)，安装和运行问题见[中文排障指南](docs/zh-CN/troubleshooting.md)。
 

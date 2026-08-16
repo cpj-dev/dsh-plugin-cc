@@ -6,7 +6,8 @@
 
 - `args.test.mjs` — argv parsing and raw `$ARGUMENTS` splitting.
 - `state.test.mjs` — state dir resolution, job upsert/prune (incl. log-file cleanup), terminal-claim races (single winner), and the SessionEnd-vs-writer concurrency race (`session-cleanup-writer.mjs` fixture).
-- `dsh.test.mjs` — headless argv composition, model overlay YAML, structured-output parsing, a full `runHeadlessAgent` round-trip against the fake dsh fixture, binary-resolution order (env → npm-pin / harness / config → PATH), and source-checkout inspection.
+- `dsh.test.mjs` — headless argv composition, model overlay YAML, mode overlays (minimal disable list, anchored-standard bootstrap insert), structured-output parsing, a full `runHeadlessAgent` round-trip against the fake dsh fixture, binary-resolution order (env → npm-pin / harness / config → PATH), and source-checkout inspection.
+- `request-snapshot.test.mjs` / `tool-bootstrap.test.mjs` — assemble/request snapshot reducer and the anchored-standard filter (promotion, per-session isolation, pre-step strip, hidden-tool guard) against a fake Cordis ctx; no real dsh.
 - `setup.test.mjs` — `setup` npm-prefix install + registry SDK-server specs against a fake npm/dsh, `--harness` link of a built checkout (absolute-path SDK-server install), refusal of unbuilt / SDK-less checkouts, migration of pre-npm source configs, npm → `--harness` and checkout A → B profile switches, external `DSH_BINARY` profile repair (no npm prefix, including an already-ready profile), stale npm-pin reinstall and failed-refresh retry (CLI + `sdkProfileVersion` identity `npm:<pin>` / `harness:<realpath>`), and `check`'s source reporting plus stale pin/identity unreadiness (skipped on Node < 22.19, the harness floor).
 - `git.test.mjs` — review-target resolution (incl. bad `--base` refusal), context collection, and the empty-diff vs failed-diff distinction on throwaway git repos.
 - `process.test.mjs` — `terminateProcessTree` death confirmation (SIGTERM-ignoring child, descendant trees).
@@ -38,7 +39,9 @@ In a scratch git repo with the plugin installed:
 8. `/dsh:import` → digest acknowledged; `/dsh:run --resume` continues with the imported context.
 9. `/dsh:stop --broker` → broker gone; a later `--resume` errors explicitly ("no live broker holds it"), and after a new `--session` run the old session stays unreachable — never a silent fresh session reported as a resume.
 10. Kill Claude Code mid-background-run → worker survives; a new session's `/dsh:runs --all` still finds it.
-11. `/dsh:run "name every tool you can call"` → the answer names only bash and `str_replace_editor` (minimal default, the mode dsh performs best in overall); the same prompt with `--mode standard` names the full toolset (file/web search, skills, subagents).
+11. `/dsh:run "name every tool you can call"` → the answer names only bash and `str_replace_editor` (minimal default); the same prompt with `--mode standard` names the full toolset (file/web search, skills, subagents).
 12. `/dsh:run --session "hi"` on a fresh workspace, then `/dsh:run --session --mode standard "hi"` → explicit mode-mismatch error naming `/dsh:stop --broker`; after stopping, the standard `--session` run works and `/dsh:check` shows the broker's mode.
+13. `/dsh:run --mode anchored-standard "name every tool you can call"` → first model-visible catalog is bash + `str_replace_editor` (check `DSH_CC_SNAPSHOT_FILE` or session `request/header`). After the first tool call or a text-only assistant reply, the next request's catalog is the full dsh-base set. `--mode minimal` on the same prompt must not promote.
+14. Two concurrent `--session` runs in the same broker with `--mode anchored-standard` (different sessions): promoting A must not widen B's first request.
 
 Record the dsh version used at the top of the release notes; it must match the [dsh-compat.md](dsh-compat.md) pin.

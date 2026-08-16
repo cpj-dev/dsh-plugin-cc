@@ -19,15 +19,18 @@
  * - Model/effort selection is a generated `--patch` overlay replacing the
  *   `agent-default-model` and `llm-deepseek` rows; `--patch` is the last
  *   composition layer, so it wins over profile and home patches.
- * - Mode selection (minimal | standard) is a generated `--patch` overlay
- *   too: dsh shows better overall capability in minimal mode, so it is the
- *   plugin default. `minimal` disables the dsh-base tool/prompt rows down
- *   to bash + str_replace_editor and fixes the persona; `standard` applies
- *   no overlay. The disabled row ids mirror dsh-base's composition and must
- *   be re-verified on every dsh upgrade (see docs/dsh-compat.md).
- *   `DSH_TOOLS_MODE` is stripped from every spawn env: the headless bundle
- *   reads it to flip Code Mode process-wide, and mode ownership belongs to
- *   the plugin's --mode.
+ * - Mode selection (minimal | standard | anchored-standard) is a generated
+ *   `--patch` overlay too. `minimal` (the default) disables the dsh-base
+ *   tool/prompt rows down to bash + str_replace_editor and tightens the
+ *   persona; `standard` applies no overlay; `anchored-standard` keeps the
+ *   full registry mounted and inserts lib/tool-bootstrap.mjs, which filters
+ *   the model-visible catalog to the Minimal pair until the session records
+ *   a durable tool/call or assistant/message, then restores the assembled
+ *   catalog. The disabled row ids (minimal) and the bootstrap plugin
+ *   (anchored-standard) must be re-verified on every dsh upgrade (see
+ *   docs/dsh-compat.md). `DSH_TOOLS_MODE` is stripped from every spawn env:
+ *   the headless bundle reads it to flip Code Mode process-wide, and mode
+ *   ownership belongs to the plugin's --mode.
  * - Headless has no session resume; multi-turn goes through the broker
  *   (see dsh-broker.mjs), never through this file.
  * - Default install is the npm CLI (`@deepseek-ai/dsh@HARNESS_NPM_VERSION`)
@@ -44,6 +47,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import { readJsonFile } from "./fs.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
@@ -58,15 +62,20 @@ const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
 const PERMISSION_MODE_ENV = "DSH_PERMISSION_MODE";
 const VALID_PERMISSION_MODES = new Set(["read-only", "workspace-write", "danger-full-access"]);
 const VALID_EFFORTS = new Set(["low", "medium", "high", "max"]);
-const VALID_MODES = new Set(["minimal", "standard"]);
+/** User-facing agent modes. `DEFAULT_MODE` stays `minimal` until A/B says otherwise. */
+export const SUPPORTED_MODES = ["minimal", "standard", "anchored-standard"];
+const VALID_MODES = new Set(SUPPORTED_MODES);
 const MODE_ENV = "DSH_CC_MODE";
+const ANCHORED_MODE = "anchored-standard";
+const BOOTSTRAP_PLUGIN_FILES = ["tool-bootstrap.mjs", "request-snapshot.mjs"];
 /** Read by the headless/web bundles to flip Code Mode process-wide; never ours to forward. */
 const TOOLS_MODE_ENV = "DSH_TOOLS_MODE";
 
 /**
  * Plugin-wide default agent mode. dsh shows better overall capability in
  * minimal mode, so every run and broker spawn defaults to it; `standard`
- * (the full dsh-base toolset) stays one `--mode` away.
+ * (the full dsh-base toolset) and `anchored-standard` (Minimal first
+ * request, then the full assembled catalog) stay one `--mode` away.
  */
 export const DEFAULT_MODE = "minimal";
 
@@ -387,7 +396,7 @@ export function normalizeMode(mode) {
   }
   const normalized = String(mode).trim().toLowerCase();
   if (!VALID_MODES.has(normalized)) {
-    throw new Error(`Unsupported mode "${mode}". Use minimal or standard.`);
+    throw new Error(`Unsupported mode "${mode}". Use ${formatSupportedModes()}.`);
   }
   return normalized;
 }
@@ -420,8 +429,30 @@ export function resolveMode({ flag = null, env = process.env, config = null } = 
   return DEFAULT_MODE;
 }
 
+/** "minimal, standard, or anchored-standard" for errors and check next-steps. */
+export function formatSupportedModes() {
+  if (SUPPORTED_MODES.length === 1) {
+    return SUPPORTED_MODES[0];
+  }
+  return `${SUPPORTED_MODES.slice(0, -1).join(", ")}, or ${SUPPORTED_MODES.at(-1)}`;
+}
+
 function yamlQuote(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/** Absolute path of a sibling module in this lib/ directory. */
+export function resolveLibModulePath(filename) {
+  return fileURLToPath(new URL(`./${filename}`, import.meta.url));
+}
+
+/** Copy the bootstrap plugin (and its snapshot helper) next to a mode overlay. */
+export function copyBootstrapModules(overlaysDir) {
+  fs.mkdirSync(overlaysDir, { recursive: true });
+  for (const filename of BOOTSTRAP_PLUGIN_FILES) {
+    fs.copyFileSync(resolveLibModulePath(filename), path.join(overlaysDir, filename));
+  }
+  return path.join(overlaysDir, "tool-bootstrap.mjs");
 }
 
 /**
@@ -539,21 +570,45 @@ export const MINIMAL_MODE_DISABLED_ROWS = [
 export const MINIMAL_MODE_PERSONA = "You are a helpful software engineer assistant.";
 
 /**
- * Render the mode overlay (a dsh `--patch` layer). `standard` is the
- * untouched dsh-base composition and returns null; `minimal` fixes the
- * persona and disables every model-facing row except bash and
- * str_replace_editor.
+ * Render the mode overlay (a dsh `--patch` layer).
+ * - `standard`: untouched dsh-base, returns null.
+ * - `minimal`: persona + identity/runtime-context off + disable down to
+ *   bash / str_replace_editor (two tools for the whole run).
+ * - `anchored-standard`: same persona/identity tightening, no tool-row
+ *   disables, insert the bootstrap plugin so request #1 is the Minimal
+ *   pair and later requests see the full assembled catalog.
  */
-export function buildModeOverlayYaml(mode) {
+export function buildModeOverlayYaml(mode, { bootstrapModulePath = null } = {}) {
   const normalized = normalizeMode(mode) ?? DEFAULT_MODE;
   if (normalized === "standard") {
     return null;
+  }
+  if (normalized === ANCHORED_MODE) {
+    const modulePath = bootstrapModulePath ?? resolveLibModulePath("tool-bootstrap.mjs");
+    return [
+      "# generated by dsh-plugin-cc (mode: anchored-standard; see lib/dsh.mjs)",
+      "- id: system-prompt",
+      "  config:",
+      `    persona: ${yamlQuote(MINIMAL_MODE_PERSONA)}`,
+      "    includeHarnessIdentity: false",
+      "- insert:",
+      "    - id: cc-tool-bootstrap",
+      `      name: ${yamlQuote(modulePath)}`,
+      "      config:",
+      "        bootstrapTools: [bash, str_replace_editor]",
+      "        promoteOn: either",
+      "        suppressedContextSources: [agent-instructions, skill-catalog]",
+      `        persona: ${yamlQuote(MINIMAL_MODE_PERSONA)}`,
+      ""
+    ].join("\n");
   }
   const lines = [
     "# generated by dsh-plugin-cc (mode: minimal; see lib/dsh.mjs)",
     "- id: system-prompt",
     "  config:",
     `    persona: ${yamlQuote(MINIMAL_MODE_PERSONA)}`,
+    "    includeHarnessIdentity: false",
+    "    includeRuntimeContext: false",
     // tool-bash advertises `run_in_background` by default, pointing the
     // model at job_output/job_kill — tools this mode disables. The `jobs`
     // SERVICE stays composed (other infrastructure may use it), so a
@@ -572,17 +627,19 @@ export function buildModeOverlayYaml(mode) {
 
 /**
  * Write the mode overlay under `<dir>/overlays`; returns its path, or null
- * for standard (no overlay). Deterministic filename: the content depends
- * only on the plugin version, so reruns overwrite in place.
+ * for standard (no overlay). Anchored-standard also copies the bootstrap
+ * plugin next to the yaml so the insert `name` is a self-contained path.
  */
 export function writeModeOverlay(dir, mode) {
-  const yaml = buildModeOverlayYaml(mode);
-  if (!yaml) {
+  const normalized = normalizeMode(mode) ?? DEFAULT_MODE;
+  if (normalized === "standard") {
     return null;
   }
   const overlaysDir = path.join(dir, "overlays");
   fs.mkdirSync(overlaysDir, { recursive: true });
-  const file = path.join(overlaysDir, "mode-minimal.yml");
+  const bootstrapModulePath = normalized === ANCHORED_MODE ? copyBootstrapModules(overlaysDir) : null;
+  const yaml = buildModeOverlayYaml(normalized, { bootstrapModulePath });
+  const file = path.join(overlaysDir, `mode-${normalized}.yml`);
   fs.writeFileSync(file, yaml, "utf8");
   return file;
 }
