@@ -80,7 +80,9 @@ test("permission mode and effort validation fail loud on bad values", () => {
   assert.equal(normalizePermissionMode(null), null);
   assert.throws(() => normalizePermissionMode("yolo"), /Unsupported permission mode/);
   assert.equal(normalizeReasoningEffort("HIGH"), "high");
+  assert.equal(normalizeReasoningEffort("low"), "low");
   assert.throws(() => normalizeReasoningEffort("extreme"), /Unsupported reasoning effort/);
+  assert.throws(() => normalizeReasoningEffort("medium"), /Unsupported reasoning effort/);
 });
 
 test("parseStructuredOutput handles bare JSON, fences, brace spans, and garbage", () => {

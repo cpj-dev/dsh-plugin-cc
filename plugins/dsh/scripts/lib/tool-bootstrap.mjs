@@ -6,7 +6,7 @@
  *
  * Promotion is derived from that session's event log (`promoteOn: either` =
  * first `tool/call` OR `assistant/message`). The phase used by pre-step and
- * `tools/pre-execute` is frozen at assemble — rc.6 persists `assistant/message`
+ * `tools/pre-execute` is frozen at assemble — rc.7 still persists `assistant/message`
  * and the current `tool/call` *before* pre-execute, so a live event scan at
  * execute time would treat the bootstrap response as already promoted.
  *
@@ -158,7 +158,7 @@ export function shouldRejectHiddenTool(toolName, { promoted, visibleTools }) {
   return !visibleTools.has(toolName);
 }
 
-/** rc.6 `tools/pre-execute` contract: `{ kind: "deny", reason }`. */
+/** rc.7 `tools/pre-execute` contract: `{ kind: "deny", reason }`. */
 export function hiddenToolDeny(toolName) {
   return {
     kind: "deny",
@@ -190,7 +190,7 @@ function sessionEventArgs(first, second) {
 }
 
 /**
- * Flatten an rc.6 `EpochHeader` into the snapshot request bag.
+ * Flatten an rc.7 `EpochHeader` into the snapshot request bag.
  * Session event data is `{ header, reason }`; the header itself is
  * `{ config: LlmCallConfig, adapterDefaults?, system?, tools? }` —
  * there is no `header.call` and no top-level `header.model`.
@@ -289,7 +289,7 @@ export function apply(ctx, config) {
   const nextTurn = createTurnCounter();
   const phaseBySession = new WeakMap();
   const pendingBySession = new WeakMap();
-  // Survives the per-turn pending bag: rc.6 appends `request/header` only when
+  // Survives the per-turn pending bag: rc.7 still appends `request/header` only when
   // the header CHANGES (`reason: initial | resume | change`), so a steady-state
   // step emits none and the last snapshot is still that step's header.
   const headerBySession = new WeakMap();
@@ -402,7 +402,7 @@ export function apply(ctx, config) {
 
   // Outermost post-transform: later-registered append listeners cannot
   // re-append tools/sections after this filter. complete:true on the
-  // *returned* AssembledSection is ignored by rc.6 (complete is captured
+  // *returned* AssembledSection is ignored by rc.7 (complete is captured
   // from the registry before the waterfall); the systemPrompt.section
   // registration above is the real complete constraint.
   listen(

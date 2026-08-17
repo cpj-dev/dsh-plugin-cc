@@ -1,7 +1,7 @@
 /**
  * DSH driver layer — the plugin's only file that knows how to invoke
  * DeepSeek Harness. Facts this file encodes (verified against
- * @deepseek-ai/dsh@0.1.0-rc.6 on npm):
+ * @deepseek-ai/dsh@0.1.0-rc.7 on npm):
  *
  * - One-shot runs: `dsh --profile headless [--patch <overlay>]... -- "<task>"`.
  *   Launcher flags must precede app arguments; the launcher consumes one
@@ -64,7 +64,7 @@ const BINARY_ENV = "DSH_BINARY";
 const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
 const PERMISSION_MODE_ENV = "DSH_PERMISSION_MODE";
 const VALID_PERMISSION_MODES = new Set(["read-only", "workspace-write", "danger-full-access"]);
-const VALID_EFFORTS = new Set(["low", "medium", "high", "max"]);
+const VALID_EFFORTS = new Set(["low", "high", "max"]);
 /** User-facing agent modes. Built-in default is `standard`; the others are opt-in. */
 export const SUPPORTED_MODES = ["standard", "minimal", "anchored-standard"];
 const VALID_MODES = new Set(SUPPORTED_MODES);
@@ -99,11 +99,11 @@ export const HARNESS_SDK_JSONRPC_PACKAGE = "@deepseek-ai/dsh-sdk-jsonrpc-server"
  * docs/dsh-compat.md). Dist-tags are unsafe: SDK-server `latest` is not
  * the same as CLI `latest`. `--harness` checkouts may run whatever they like.
  */
-export const HARNESS_NPM_VERSION = "0.1.0-rc.6";
+export const HARNESS_NPM_VERSION = "0.1.0-rc.7";
 /** Node floor the harness itself requires (higher than this plugin's >=20). */
 export const HARNESS_NODE_FLOOR = "22.19.0";
 /**
- * Direct peerDependencies of `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.0-rc.6`,
+ * Direct peerDependencies of `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.0-rc.7`,
  * pinned to the same release (cordis is versioned independently). Setup
  * installs these into the cc profile; without them the server cannot
  * resolve `@deepseek-ai/dsh-sdk-protocol` and cc boot fails.
@@ -386,7 +386,7 @@ export function normalizeReasoningEffort(effort) {
   }
   const normalized = String(effort).trim().toLowerCase();
   if (!VALID_EFFORTS.has(normalized)) {
-    throw new Error(`Unsupported reasoning effort "${effort}". Use low, medium, high, or max.`);
+    throw new Error(`Unsupported reasoning effort "${effort}". Use low, high, or max.`);
   }
   return normalized;
 }

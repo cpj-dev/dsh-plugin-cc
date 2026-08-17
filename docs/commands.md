@@ -16,7 +16,7 @@ Resolution: per-run `--mode` > `DSH_CC_MODE` > `/dsh:setup --mode <m>` > built-i
 
 JSON payloads carry `agentMode` (broker-backed runs report the broker's composed mode). The task footer splits the two orthogonal facts: `agent mode: standard · sandbox: read-only`.
 
-`minimal` and `anchored-standard` both tighten the persona (`includeHarnessIdentity` / `includeRuntimeContext` off) and insert [`lib/tool-bootstrap.mjs`](../plugins/dsh/scripts/lib/tool-bootstrap.mjs). That plugin registers a `complete: true` persona section and filters assemble as the outermost waterfall transform so the model sees one RL sentence (`dsh-persona` cannot mount on headless/cc). `minimal` also disables the rest of the dsh-base tool rows and turns off bash `run_in_background` (job tools are gone). `anchored-standard` denies hidden tools at `tools/pre-execute` until promoted (phase frozen at assemble, because rc.6 logs the current response before execute), and strips `agent-instructions` / `skill-catalog` until then. Optional `DSH_CC_SNAPSHOT_FILE` appends JSONL after pre-step and again on `request/header`. Neither mode switches to official PTY bash or `dsh-fs-local`.
+`minimal` and `anchored-standard` both tighten the persona (`includeHarnessIdentity` / `includeRuntimeContext` off) and insert [`lib/tool-bootstrap.mjs`](../plugins/dsh/scripts/lib/tool-bootstrap.mjs). That plugin registers a `complete: true` persona section and filters assemble as the outermost waterfall transform so the model sees one RL sentence (`dsh-persona` cannot mount on headless/cc). `minimal` also disables the rest of the dsh-base tool rows and turns off bash `run_in_background` (job tools are gone). `anchored-standard` denies hidden tools at `tools/pre-execute` until promoted (phase frozen at assemble, because rc.7 still logs the current response before execute), and strips `agent-instructions` / `skill-catalog` until then. Optional `DSH_CC_SNAPSHOT_FILE` appends JSONL after pre-step and again on `request/header`. Neither mode switches to official PTY bash or `dsh-fs-local`.
 
 ## `/dsh:check` → `check`
 
@@ -39,7 +39,7 @@ Readiness probe: node, the `dsh` binary (resolution: `DSH_BINARY` env → persis
 | free text | review/critique focus |
 | `--base <ref>` | branch review against this ref (default: detected origin HEAD / main / master) |
 | `--scope auto\|working-tree\|branch` | target selection; `auto` prefers a dirty working tree |
-| `--model <name>`, `--effort low\|medium\|high\|max` | per-run model overlay |
+| `--model <name>`, `--effort low\|high\|max` | per-run model overlay (default `max`; `low` is in the official schema) |
 | `--mode minimal\|standard\|anchored-standard` | per-run agent mode (default `standard`; see "Agent mode") |
 | `--background` | queue and return a run id; `--wait` forces foreground |
 

@@ -31,8 +31,8 @@ function session(events) {
   return { session: { events } };
 }
 
-/** rc.6 `request/header` payload: `{ header: EpochHeader, reason }`. */
-function rc6HeaderEvent({ tools = TWO_TOOLS, reason = "initial", config = {} } = {}) {
+/** rc.7 `request/header` payload: `{ header: EpochHeader, reason }`. */
+function epochHeaderEvent({ tools = TWO_TOOLS, reason = "initial", config = {} } = {}) {
   return {
     type: "request/header",
     data: {
@@ -301,12 +301,12 @@ test("apply(): pre-execute denies hidden tools until the *next* assemble", async
   assert.equal(await ctx.preExecute({ agent: promoted, name: "read" }), "executed");
 });
 
-test("apply(): rc.6 persist-then-execute still denies hidden tools on the bootstrap response", async () => {
+test("apply(): persist-then-execute still denies hidden tools on the bootstrap response", async () => {
   const ctx = createFakeCtx();
   apply(ctx, {});
   const agent = session([]);
   await ctx.assemble({ agent }, { tools: FULL_TOOLS, sections: [{ text: "extra" }] });
-  // rc.6: persist assistant/message, then this tool/call, THEN tools/pre-execute.
+  // rc.7 still: persist assistant/message, then this tool/call, THEN tools/pre-execute.
   agent.session.events.push({ type: "assistant/message" }, { type: "tool/call" });
   assert.deepEqual(await ctx.preExecute({ agent, name: "read" }), hiddenToolDeny("read"));
   assert.equal(await ctx.preExecute({ agent, name: "bash" }), "executed");
@@ -404,7 +404,7 @@ test("apply(): assemble filter failure exposes the full catalog once", async () 
   assert.match(warnings[0], /exposing the full catalog/);
 });
 
-test("requestFromHeader reads rc.6 EpochHeader.config, not a top-level model", () => {
+test("requestFromHeader reads EpochHeader.config, not a top-level model", () => {
   const request = requestFromHeader({
     config: {
       provider: "deepseek-official",
@@ -453,13 +453,13 @@ test("apply() records EpochHeader.config and does not inherit the previous heade
       stripped.messages.map((message) => message.source.kind),
       ["user"]
     );
-    ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: TWO_TOOLS, reason: "initial" }));
+    ctx.emitSessionEvent(agent.session, epochHeaderEvent({ tools: TWO_TOOLS, reason: "initial" }));
     ctx.emitSessionEvent(agent.session, { type: "step/end" });
 
     agent.session.events.push({ type: "assistant/message" });
     await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: FULL_TOOLS });
     await ctx.preStep(agent, injected);
-    ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: FULL_TOOLS, reason: "change" }));
+    ctx.emitSessionEvent(agent.session, epochHeaderEvent({ tools: FULL_TOOLS, reason: "change" }));
     ctx.emitSessionEvent(agent.session, { type: "step/end" });
 
     const lines = fs
@@ -495,7 +495,7 @@ test("apply() records EpochHeader.config and does not inherit the previous heade
 });
 
 test("apply() records a wire line for a step whose header did not change", async () => {
-  // rc.6 appends `request/header` only for `initial` / `resume` / `change`.
+  // rc.7 still appends `request/header` only for `initial` / `resume` / `change`.
   // Minimal mode holds one header for the whole run, so recording solely on
   // that event left every step after the first with no wire evidence at all.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-boot-steady-"));
@@ -507,7 +507,7 @@ test("apply() records a wire line for a step whose header did not change", async
     apply(ctx, {});
     const agent = session([]);
     await ctx.assemble({ agent }, { sections: [{ text: "extra" }], tools: TWO_TOOLS });
-    ctx.emitSessionEvent(agent.session, rc6HeaderEvent({ tools: TWO_TOOLS, reason: "initial" }));
+    ctx.emitSessionEvent(agent.session, epochHeaderEvent({ tools: TWO_TOOLS, reason: "initial" }));
     ctx.emitSessionEvent(agent.session, { type: "step/end" });
 
     // Second step: promoted, but the composed catalog is still the pair, so
