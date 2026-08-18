@@ -8,7 +8,7 @@
 
 Claude Code plugin that runs **DeepSeek Harness** (`dsh`) from slash commands: review, critique, one-shot tasks, and resumable multi-turn sessions.
 
-Pin: [`@deepseek-ai/dsh@0.1.0-rc.6`](https://www.npmjs.com/package/@deepseek-ai/dsh). Re-verify [docs/dsh-compat.md](docs/dsh-compat.md) on every dsh upgrade.
+Pin: [`@deepseek-ai/dsh@0.1.0-rc.7`](https://www.npmjs.com/package/@deepseek-ai/dsh). After upgrading the plugin, rerun `/dsh:setup`. Re-verify [docs/dsh-compat.md](docs/dsh-compat.md) on every dsh upgrade.
 
 ## Agent modes
 

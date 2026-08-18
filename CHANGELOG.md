@@ -8,6 +8,20 @@ since the last bump indistinguishable to a user reading `/plugin` or filing a bu
 `tests/version.test.mjs` and the `version` CI job enforce it; there is no
 `Unreleased` section to accumulate in.
 
+## 2.0.1 (2026-08-18)
+
+Pin bump to `@deepseek-ai/dsh@0.1.0-rc.7` and `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.0-rc.7`. Existing machines pick up the new CLI and `cc` profile plugins only after `/dsh:setup`; `/dsh:check` reports a stale pin as not ready until then. In-memory broker sessions do not survive a pin bump.
+
+### Changed
+
+- Runtime pin `0.1.0-rc.6` → `0.1.0-rc.7`. SDK-server peer package names are unchanged; cordis stays `^4.0.1`. Continue pinning the exact version — do not follow npm dist-tags (CLI `latest`/`next` are rc.7; SDK-server `latest` is still `0.0.1-rc.5`).
+- `--effort` is now `low|high|max` (plugin default remains `max`). `medium` is not in the upstream `llm-deepseek` schema and is rejected so an overlay cannot fail boot. Official schema also added `low` (already accepted) and `off` (the plugin still does not expose `off`).
+- Web-only rc.7 surfaces (settings cards, Job Panel Codex/Claude Code subagents, MCP/ACP image persistence, PTC rename, Safari/history pagination) are not adopted. `minimal` still uses sandboxed one-shot `tool-bash`.
+
+### Fixed
+
+- Upstream: a session truncated at max-tokens can continue instead of dying with `INVALID_REPLAY_STATE`. Broker multi-turn runs inherit that recovery.
+
 ## 2.0.0 (2026-08-17)
 
 Most of this release already reached users on `main` while the manifest still

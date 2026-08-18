@@ -1,6 +1,6 @@
 {
   "name": "dsh",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "DeepSeek Harness ↔ Claude Code bridge for review, critique, and delegation / 用于审查、评审和任务委派的桥接插件。",
   "author": {
     "name": "DeepSeek Harness community"

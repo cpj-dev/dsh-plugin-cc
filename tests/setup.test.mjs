@@ -40,7 +40,7 @@ import fs from "node:fs";
 import path from "node:path";
 const argv = process.argv.slice(2);
 const dshHome = process.env.DSH_HOME;
-if (argv.includes("--version")) { console.log("0.1.0-rc.6-npmfake"); process.exit(0); }
+if (argv.includes("--version")) { console.log("${HARNESS_NPM_VERSION}-npmfake"); process.exit(0); }
 if (argv[0] === "plugin") {
   fs.appendFileSync(path.join(dshHome, "plugin-add.log"), JSON.stringify(argv) + "\\n");
   if (process.env.DSH_FAIL_PLUGIN_ADD) {
