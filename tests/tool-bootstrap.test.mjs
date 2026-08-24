@@ -31,7 +31,7 @@ function session(events) {
   return { session: { events } };
 }
 
-/** rc.7 `request/header` payload: `{ header: EpochHeader, reason }`. */
+/** 0.1.1-rc.2 `request/header` payload: `{ header: EpochHeader, reason }`. */
 function epochHeaderEvent({ tools = TWO_TOOLS, reason = "initial", config = {} } = {}) {
   return {
     type: "request/header",
@@ -306,7 +306,7 @@ test("apply(): persist-then-execute still denies hidden tools on the bootstrap r
   apply(ctx, {});
   const agent = session([]);
   await ctx.assemble({ agent }, { tools: FULL_TOOLS, sections: [{ text: "extra" }] });
-  // rc.7 still: persist assistant/message, then this tool/call, THEN tools/pre-execute.
+  // 0.1.1-rc.2 still: persist assistant/message, then this tool/call, THEN tools/pre-execute.
   agent.session.events.push({ type: "assistant/message" }, { type: "tool/call" });
   assert.deepEqual(await ctx.preExecute({ agent, name: "read" }), hiddenToolDeny("read"));
   assert.equal(await ctx.preExecute({ agent, name: "bash" }), "executed");
@@ -495,7 +495,7 @@ test("apply() records EpochHeader.config and does not inherit the previous heade
 });
 
 test("apply() records a wire line for a step whose header did not change", async () => {
-  // rc.7 still appends `request/header` only for `initial` / `resume` / `change`.
+  // 0.1.1-rc.2 still appends `request/header` only for `initial` / `resume` / `change`.
   // Minimal mode holds one header for the whole run, so recording solely on
   // that event left every step after the first with no wire evidence at all.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-boot-steady-"));

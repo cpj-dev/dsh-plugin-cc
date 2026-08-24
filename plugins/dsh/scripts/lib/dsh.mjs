@@ -1,7 +1,7 @@
 /**
  * DSH driver layer — the plugin's only file that knows how to invoke
  * DeepSeek Harness. Facts this file encodes (verified against
- * @deepseek-ai/dsh@0.1.0-rc.7 on npm):
+ * @deepseek-ai/dsh@0.1.1-rc.2 on npm):
  *
  * - One-shot runs: `dsh --profile headless [--patch <overlay>]... -- "<task>"`.
  *   Launcher flags must precede app arguments; the launcher consumes one
@@ -99,11 +99,11 @@ export const HARNESS_SDK_JSONRPC_PACKAGE = "@deepseek-ai/dsh-sdk-jsonrpc-server"
  * docs/dsh-compat.md). Dist-tags are unsafe: SDK-server `latest` is not
  * the same as CLI `latest`. `--harness` checkouts may run whatever they like.
  */
-export const HARNESS_NPM_VERSION = "0.1.0-rc.7";
+export const HARNESS_NPM_VERSION = "0.1.1-rc.2";
 /** Node floor the harness itself requires (higher than this plugin's >=20). */
 export const HARNESS_NODE_FLOOR = "22.19.0";
 /**
- * Direct peerDependencies of `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.0-rc.7`,
+ * Direct peerDependencies of `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.1-rc.2`,
  * pinned to the same release (cordis is versioned independently). Setup
  * installs these into the cc profile; without them the server cannot
  * resolve `@deepseek-ai/dsh-sdk-protocol` and cc boot fails.

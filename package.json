@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-cc",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
   "type": "module",
   "description": "Claude Code marketplace repo bridging to the DeepSeek Harness (dsh) CLI and SDK runtime.",

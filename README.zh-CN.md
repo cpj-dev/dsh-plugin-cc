@@ -7,7 +7,7 @@
 
 Claude Code 插件：用斜杠命令跑 **DeepSeek Harness**（`dsh`）——代码审查、对抗式评审、一次性任务、可恢复多轮会话。
 
-Pin：[`@deepseek-ai/dsh@0.1.0-rc.7`](https://www.npmjs.com/package/@deepseek-ai/dsh)。升级插件后重新跑 `/dsh:setup`。升级 dsh 时重新核对 [docs/dsh-compat.md](docs/dsh-compat.md)。英文文档是技术事实的权威版本；命令名、参数、环境变量、路径和 JSON 字段保持英文。
+Pin：[`@deepseek-ai/dsh@0.1.1-rc.2`](https://www.npmjs.com/package/@deepseek-ai/dsh)。升级插件后重新跑 `/dsh:setup`。升级 dsh 时重新核对 [docs/dsh-compat.md](docs/dsh-compat.md)。英文文档是技术事实的权威版本；命令名、参数、环境变量、路径和 JSON 字段保持英文。
 
 ## Agent 模式
 

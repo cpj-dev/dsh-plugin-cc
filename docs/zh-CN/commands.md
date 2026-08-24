@@ -18,7 +18,7 @@
 
 JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组合的模式）。任务 footer 把两个正交事实分开：`agent mode: standard · sandbox: read-only`。
 
-`minimal` 与 `anchored-standard` 都会收紧 persona（关闭 `includeHarnessIdentity` / `includeRuntimeContext`），并插入 `lib/tool-bootstrap.mjs`：注册 `complete: true` persona section，并以最外层 assemble 过滤把系统提示收成一句 RL sentence（headless/cc 不能挂 `dsh-persona`）。`minimal` 还会禁用其余 dsh-base 工具行，并关掉 bash `run_in_background`。`anchored-standard` 在晋升前于 `tools/pre-execute` 拒绝隐藏工具（phase 在 assemble 时冻结，因为 rc.7 仍会在 execute 之前写入当前响应），并剥掉 `agent-instructions` / `skill-catalog`。可选 `DSH_CC_SNAPSHOT_FILE` 在 pre-step 之后以及 `request/header` 时追加 JSONL。两种切换模式都不会改用官方 PTY bash 或 `dsh-fs-local`。
+`minimal` 与 `anchored-standard` 都会收紧 persona（关闭 `includeHarnessIdentity` / `includeRuntimeContext`），并插入 `lib/tool-bootstrap.mjs`：注册 `complete: true` persona section，并以最外层 assemble 过滤把系统提示收成一句 RL sentence（headless/cc 不能挂 `dsh-persona`）。`minimal` 还会禁用其余 dsh-base 工具行，并关掉 bash `run_in_background`。`anchored-standard` 在晋升前于 `tools/pre-execute` 拒绝隐藏工具（phase 在 assemble 时冻结，因为 0.1.1-rc.2 仍会在 execute 之前写入当前响应），并剥掉 `agent-instructions` / `skill-catalog`。可选 `DSH_CC_SNAPSHOT_FILE` 在 pre-step 之后以及 `request/header` 时追加 JSONL。两种切换模式都不会改用官方 PTY bash 或 `dsh-fs-local`。
 
 ## `/dsh:check` → `check`
 
