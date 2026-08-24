@@ -1,0 +1,4 @@
+{
+  "name": "dsh-plugin-cc",
+  "install": "node -e \"const major = Number(process.versions.node.split('.')[0]); if (major < 20) { console.error('Node >= 20 is required, found ' + process.version); process.exit(1); } console.log('Node ' + process.version + ' satisfies the >= 20 engine floor; zero-dependency project, nothing to install. Run tests with: npm test');\""
+}
