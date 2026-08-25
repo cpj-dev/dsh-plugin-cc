@@ -76,7 +76,8 @@ Layout: `.claude-plugin/marketplace.json` · `plugins/dsh/commands/*.md` · `plu
 - No mid-run approvals. Permissions are decided before launch (`--write` or not).
 - Fresh one-shot runs are not resumable. Only `--session` / `--resume` / `/dsh:import` record session ids, and those live only as long as the broker process.
 - Stop = kill. The SDK wire has no per-turn cancel; stopping a mid-turn broker run discards in-memory sessions.
-- `/dsh:import` is a compressed text digest, not native history replay.
+- `/dsh:import` is a compressed text digest, not native history replay. Non-text Claude blocks (including images) are dropped.
+- Visual understanding stays with Claude. Slash `$ARGUMENTS` is text; this plugin never forwards pasted images to DSH. `--model deepseek-v4-flash-vision-exp` only changes the model id. There is no `--image` flag. Native DSH vision belongs in `dsh web` / TUI. In `standard`, DSH may `read_image` a repo file — that is not a product path for Claude chat images.
 - POSIX only. Windows is out of scope.
 
 ## Community and support

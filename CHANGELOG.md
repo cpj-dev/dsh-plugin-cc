@@ -8,14 +8,14 @@ since the last bump indistinguishable to a user reading `/plugin` or filing a bu
 `tests/version.test.mjs` and the `version` CI job enforce it; there is no
 `Unreleased` section to accumulate in.
 
-## 2.0.2 (2026-08-24)
+## 2.0.2 (2026-08-25)
 
 Pin bump to `@deepseek-ai/dsh@0.1.1-rc.2` and `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.1-rc.2`. Existing machines pick up the new CLI and `cc` profile plugins only after `/dsh:setup`; `/dsh:check` reports a stale pin as not ready until then. In-memory broker sessions do not survive a pin bump.
 
 ### Changed
 
 - Runtime pin `0.1.0-rc.7` → `0.1.1-rc.2` (covers upstream `0.1.0-rc.8`, `0.1.1-rc.1`, and `0.1.1-rc.2`). SDK-server peer package names are unchanged; cordis stays `^4.0.1`. `dsh-base` `cordis.patch.yml` row ids are identical to rc.7, so `MINIMAL_MODE_DISABLED_ROWS` is unchanged. Continue pinning the exact version — do not follow npm dist-tags (CLI `latest`/`next` are 0.1.1-rc.2; SDK-server `latest` is still `0.0.1-rc.5`, `next` is 0.1.1-rc.2).
-- Catalog now includes `deepseek-v4-flash-vision-exp`. Plugin default remains `deepseek-v4-pro` at effort `max`; `--model` can select the vision id. The plugin still does not send image content blocks.
+- Catalog now includes `deepseek-v4-flash-vision-exp`. Plugin default remains `deepseek-v4-pro` at effort `max`; `--model` can select the vision id. **Vision is a non-goal for this plugin:** Claude keeps pasted images and should hand DSH a text brief. There is no `--image` flag. The plugin never sends image content blocks. `/dsh:import` is text-only. Native DSH vision belongs in `dsh web` / TUI. `standard` may let DSH `read_image` a workspace file if the route is image-capable; that is not a Claude-paste path.
 - Web/UI-only surfaces from rc.8–0.1.1-rc.2 (native image requests, Files API image reuse, `@` file/session references, Claude Code/Codex Profile Bundles, Windows PTY PowerShell, Job Panel, Python SDK preset coverage) are not adopted. `minimal` still uses sandboxed one-shot `tool-bash`.
 - Upstream rc.8 SQLite session-query on-disk format is incompatible with earlier versions. Headless/cc keep that row at `openAt: never`; this plugin does not open it.
 

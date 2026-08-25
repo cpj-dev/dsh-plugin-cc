@@ -41,7 +41,7 @@ JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组�
 | 自由文本 | 审查或评审重点 |
 | `--base <ref>` | 相对指定 ref 审查分支；默认自动检测远端 HEAD、`main` 或 `master` |
 | `--scope auto\|working-tree\|branch` | 目标范围；`auto` 优先审查未提交改动 |
-| `--model <name>`、`--effort low\|high\|max` | 本次运行的模型配置（默认 `max`；官方 schema 现已承认 `low`） |
+| `--model <name>`、`--effort low\|high\|max` | 本次运行的模型配置（默认 `max`；官方 schema 现已承认 `low`）。`deepseek-v4-flash-vision-exp` 这类视觉 id **不会**收到 Claude 对话里的图片——本插件只发文本 |
 | `--mode minimal\|standard\|anchored-standard` | 本次运行的 Agent 模式（默认 `standard`；见上文「Agent 模式」） |
 | `--background` | 后台排队并返回 run ID；`--wait` 强制前台等待 |
 
@@ -58,7 +58,7 @@ JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组�
 | `--session` | 通过 broker 执行并记录可恢复 session ID |
 | `--resume`、`--resume-last` | 恢复最近的 dsh 会话；会校验当前 broker runtime generation，broker 已停止或重启时明确报错，不会静默创建新会话 |
 | `--fresh` | 强制走一次性运行路径 |
-| `--model`、`--effort` | 仅用于一次性运行；恢复会话沿用 broker 启动配置 |
+| `--model`、`--effort` | 仅用于一次性运行；恢复会话沿用 broker 启动配置。视觉 id 同样收不到 Claude 对话图片 |
 | `--mode minimal\|standard\|anchored-standard` | Agent 模式（默认 `standard`；见上文「Agent 模式」）。`--session` 解析出的模式与活 broker 不一致时报错；恢复会话沿用 broker 启动模式 |
 | `--background` | 分离到后台执行并返回 run ID |
 | `--timeout-ms <n>` | broker 单轮超时，默认 20 分钟；必须为正整数，并会转发到 broker |
@@ -67,7 +67,7 @@ JSON payload 携带 `agentMode`（broker 承载的运行上报 broker 实际组�
 
 ## `/dsh:import` → `import`
 
-将 Claude 会话记录压缩成有限长度的文本摘要，并以此启动可恢复 broker 会话。这是弱导入，不是原生历史回放。可通过 `--source <jsonl>` 指定记录文件，之后使用 `/dsh:run --resume` 继续；`--write` 允许导入会话修改工作区。
+将 Claude 会话记录压缩成有限长度的文本摘要，并以此启动可恢复 broker 会话。这是弱导入，不是原生历史回放。可通过 `--source <jsonl>` 指定记录文件，之后使用 `/dsh:run --resume` 继续；`--write` 允许导入会话修改工作区。只保留 `type === "text"` 的块；图片和其他非文本 Claude 块会被丢弃。
 
 ## `/dsh:runs` → `runs`，`/dsh:show` → `show`
 
