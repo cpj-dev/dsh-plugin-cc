@@ -1,7 +1,7 @@
 /**
  * Reduce model-visible prompt pieces into a small, comparable snapshot.
  * The bootstrap plugin records after `agent/pre-step` (context kinds) and
- * again on session `request/header` (model / maxTokens / effort). rc.7 still
+ * again on session `request/header` (model / maxTokens / effort). 0.1.1-rc.2 still
  * stores those scalars on `event.data.header.config` (`EpochHeader`), not
  * on the header root. Assemble alone cannot see `agent-instructions` /
  * `skill-catalog` — those are injected at pre-step — so do not treat an

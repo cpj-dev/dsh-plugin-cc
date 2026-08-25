@@ -7,7 +7,7 @@
 
 Claude Code 插件：用斜杠命令跑 **DeepSeek Harness**（`dsh`）——代码审查、对抗式评审、一次性任务、可恢复多轮会话。
 
-Pin：[`@deepseek-ai/dsh@0.1.0-rc.7`](https://www.npmjs.com/package/@deepseek-ai/dsh)。升级插件后重新跑 `/dsh:setup`。升级 dsh 时重新核对 [docs/dsh-compat.md](docs/dsh-compat.md)。英文文档是技术事实的权威版本；命令名、参数、环境变量、路径和 JSON 字段保持英文。
+Pin：[`@deepseek-ai/dsh@0.1.1-rc.2`](https://www.npmjs.com/package/@deepseek-ai/dsh)。升级插件后重新跑 `/dsh:setup`。升级 dsh 时重新核对 [docs/dsh-compat.md](docs/dsh-compat.md)。英文文档是技术事实的权威版本；命令名、参数、环境变量、路径和 JSON 字段保持英文。
 
 ## Agent 模式
 
@@ -75,7 +75,8 @@ broker（`--session` / `--resume` / `/dsh:import`）沿用启动时的模式。�
 - 不支持运行中交互审批；权限在启动前用 `--write` 决定。
 - 一次性运行不可恢复。只有 `--session` / `--resume` / `/dsh:import` 会记录 session id，且只在对应 broker 进程存活期间有效。
 - Stop = kill。SDK 没有单轮取消；停掉进行中的 broker 轮次会丢掉内存会话。
-- `/dsh:import` 是压缩文本摘要，不是原生历史回放。
+- `/dsh:import` 是压缩文本摘要，不是原生历史回放。非文本的 Claude 块（含图片）会被丢弃。
+- 视觉理解留在 Claude 侧。Slash 的 `$ARGUMENTS` 是文本；本插件不会把粘贴的图片转发给 DSH。`--model deepseek-v4-flash-vision-exp` 只改模型 id。没有 `--image` 参数。原生 DSH 视觉属于 `dsh web` / TUI。`standard` 下 DSH 可能对仓库文件调用 `read_image`——那不是把 Claude 对话图片交给 DSH 的产品路径。
 - v1 仅 POSIX，不支持 Windows。
 
 ## 社区与支持

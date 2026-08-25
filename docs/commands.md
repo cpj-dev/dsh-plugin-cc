@@ -16,7 +16,7 @@ Resolution: per-run `--mode` > `DSH_CC_MODE` > `/dsh:setup --mode <m>` > built-i
 
 JSON payloads carry `agentMode` (broker-backed runs report the broker's composed mode). The task footer splits the two orthogonal facts: `agent mode: standard · sandbox: read-only`.
 
-`minimal` and `anchored-standard` both tighten the persona (`includeHarnessIdentity` / `includeRuntimeContext` off) and insert [`lib/tool-bootstrap.mjs`](../plugins/dsh/scripts/lib/tool-bootstrap.mjs). That plugin registers a `complete: true` persona section and filters assemble as the outermost waterfall transform so the model sees one RL sentence (`dsh-persona` cannot mount on headless/cc). `minimal` also disables the rest of the dsh-base tool rows and turns off bash `run_in_background` (job tools are gone). `anchored-standard` denies hidden tools at `tools/pre-execute` until promoted (phase frozen at assemble, because rc.7 still logs the current response before execute), and strips `agent-instructions` / `skill-catalog` until then. Optional `DSH_CC_SNAPSHOT_FILE` appends JSONL after pre-step and again on `request/header`. Neither mode switches to official PTY bash or `dsh-fs-local`.
+`minimal` and `anchored-standard` both tighten the persona (`includeHarnessIdentity` / `includeRuntimeContext` off) and insert [`lib/tool-bootstrap.mjs`](../plugins/dsh/scripts/lib/tool-bootstrap.mjs). That plugin registers a `complete: true` persona section and filters assemble as the outermost waterfall transform so the model sees one RL sentence (`dsh-persona` cannot mount on headless/cc). `minimal` also disables the rest of the dsh-base tool rows and turns off bash `run_in_background` (job tools are gone). `anchored-standard` denies hidden tools at `tools/pre-execute` until promoted (phase frozen at assemble, because 0.1.1-rc.2 still logs the current response before execute), and strips `agent-instructions` / `skill-catalog` until then. Optional `DSH_CC_SNAPSHOT_FILE` appends JSONL after pre-step and again on `request/header`. Neither mode switches to official PTY bash or `dsh-fs-local`.
 
 ## `/dsh:check` → `check`
 
@@ -39,7 +39,7 @@ Readiness probe: node, the `dsh` binary (resolution: `DSH_BINARY` env → persis
 | free text | review/critique focus |
 | `--base <ref>` | branch review against this ref (default: detected origin HEAD / main / master) |
 | `--scope auto\|working-tree\|branch` | target selection; `auto` prefers a dirty working tree |
-| `--model <name>`, `--effort low\|high\|max` | per-run model overlay (default `max`; `low` is in the official schema) |
+| `--model <name>`, `--effort low\|high\|max` | per-run model overlay (default `max`; `low` is in the official schema). A vision id such as `deepseek-v4-flash-vision-exp` does not receive Claude chat images — this plugin sends text only |
 | `--mode minimal\|standard\|anchored-standard` | per-run agent mode (default `standard`; see "Agent mode") |
 | `--background` | queue and return a run id; `--wait` forces foreground |
 
@@ -56,7 +56,7 @@ A nonexistent `--base` errors up front ("Unknown base ref"), before any backgrou
 | `--session` | run through the broker; records a resumable dsh session id |
 | `--resume`, `--resume-last` | continue the latest recorded dsh session (empty prompt = "continue"); validated against the live broker's runtime generation — a stopped or restarted broker/runtime yields an explicit error, never a silent fresh session |
 | `--fresh` | force the one-shot path |
-| `--model`, `--effort` | one-shot runs only; a resume keeps the broker's startup model |
+| `--model`, `--effort` | one-shot runs only; a resume keeps the broker's startup model. Vision ids still do not receive Claude chat images |
 | `--mode minimal\|standard\|anchored-standard` | agent mode (default `standard`; see "Agent mode"). A `--session` run resolving a different mode than the live broker errors; a resume keeps the broker's startup mode |
 | `--background` | detached execution, returns a run id |
 | `--timeout-ms <n>` | broker-run turn timeout, forwarded to the broker so it frees itself on expiry (default 20 minutes; must be a positive integer, rejected otherwise) |
@@ -65,7 +65,7 @@ A nonexistent `--base` errors up front ("Unknown base ref"), before any backgrou
 
 ## `/dsh:import` → `import`
 
-Weak import: compresses the Claude transcript (explicit `--source <jsonl>`, else the hook-recorded path, else the newest transcript for this project) into a bounded digest and starts a resumable broker session seeded with it. Continue with `/dsh:run --resume`. `--write` grants the imported session workspace-write.
+Weak import: compresses the Claude transcript (explicit `--source <jsonl>`, else the hook-recorded path, else the newest transcript for this project) into a bounded digest and starts a resumable broker session seeded with it. Continue with `/dsh:run --resume`. `--write` grants the imported session workspace-write. Only `type === "text"` blocks are kept; images and other non-text Claude blocks are dropped.
 
 ## `/dsh:runs` → `runs`, `/dsh:show` → `show`
 
