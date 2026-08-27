@@ -16,6 +16,7 @@ import { makeTempDir, prependPath, withEnv } from "./helpers.mjs";
 import {
   binaryAvailable,
   isWindowsBatchFile,
+  locateCommandOnPath,
   parsePosixNodeWrapper,
   resolveBatchShimToJs,
   resolveNodeExecutable,
@@ -26,8 +27,8 @@ import { resolveDshInvocation, runHeadlessAgent, writePluginConfig } from "../pl
 
 const FAKE_DSH = path.join(path.dirname(fileURLToPath(import.meta.url)), "fake-dsh-fixture.mjs");
 
-function writeCmdShim(dir, jsEntry) {
-  const cmd = path.join(dir, "dsh.cmd");
+function writeCmdShim(dir, jsEntry, basename = "dsh") {
+  const cmd = path.join(dir, `${basename}.cmd`);
   fs.writeFileSync(
     cmd,
     [
@@ -124,6 +125,46 @@ test("resolveSpawn never uses a PATH node.cmd as the Node executable", () => {
   const node = resolveNodeExecutable(env, path.join(dir, "node.cmd"));
   assert.equal(isWindowsBatchFile(node), false);
   assert.doesNotMatch(node, /\.(cmd|bat)$/i);
+});
+
+test("parsePosixNodeWrapper only matches the plugin-managed two-line wrapper", () => {
+  const dir = makeTempDir("wrap-shape-");
+  const plugin = path.join(dir, "plugin-dsh");
+  fs.writeFileSync(plugin, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_DSH}" "$@"\n`, { mode: 0o755 });
+  assert.deepEqual(parsePosixNodeWrapper(plugin), { node: process.execPath, binJs: FAKE_DSH });
+
+  const custom = path.join(dir, "custom-dsh");
+  fs.writeFileSync(
+    custom,
+    `#!/bin/sh\nexport DSH_HOME=/tmp/dsh-home\nexec "${process.execPath}" "${FAKE_DSH}" "$@"\n`,
+    { mode: 0o755 }
+  );
+  assert.equal(parsePosixNodeWrapper(custom), null);
+  const invocation = resolveDshInvocation({ ...process.env, DSH_BINARY: custom, CLAUDE_PLUGIN_DATA: dir });
+  assert.equal(invocation.command, custom);
+  assert.deepEqual(invocation.args, []);
+  assert.equal(invocation.shell, false);
+});
+
+test("Windows PATH prefers npm.cmd over the extensionless POSIX npm shim", (t) => {
+  if (process.platform !== "win32") {
+    t.skip("PATHEXT vs extensionless POSIX shims is a Windows PATH behavior");
+    return;
+  }
+  const dir = makeTempDir("pathext-npm-");
+  fs.writeFileSync(path.join(dir, "npm"), "#!/bin/sh\necho posix-npm\n");
+  writeCmdShim(dir, FAKE_DSH, "npm");
+  const env = prependPath(dir, process.env);
+  const located = locateCommandOnPath("npm", env);
+  assert.equal(path.dirname(located), dir);
+  assert.match(path.basename(located), /^npm\.cmd$/i);
+  assert.equal(isWindowsBatchFile(located), true);
+  const resolved = resolveSpawn("npm", ["--version"], env);
+  assert.equal(resolved.shell, false);
+  assert.doesNotMatch(resolved.command, /\.(cmd|bat)$/i);
+  assert.deepEqual(resolved.args, [FAKE_DSH, "--version"]);
+  const probe = binaryAvailable("npm", ["--version"], { env });
+  assert.equal(probe.available, true, probe.detail);
 });
 
 test("runHeadlessAgent spawns node + JS entry for a .cmd DSH_BINARY, never shell:true", async () => {

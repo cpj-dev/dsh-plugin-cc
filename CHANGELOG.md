@@ -15,8 +15,8 @@ Windows one-shot runs no longer fail with `spawn EINVAL`. Node 18.20.2+, 20.12.2
 ### Fixed
 
 - `/dsh:run`, review, critique, and other one-shot paths on Windows spawn `node` + `lib/bin.js` instead of npm's `dsh.cmd` shim or a POSIX `#!/bin/sh` wrapper CreateProcess cannot run.
-- `/dsh:setup` persists `{ dshNode, dshBinJs }` as the launch config. On Unix it still writes the convenience `bin/dsh` wrapper; on Windows it skips that file. Existing POSIX wrappers are parsed back to `node` + `bin.js` so a 2.0.2 Windows install that wrote `bin/dsh` starts working after upgrade without an extra setup, as long as `bin.js` is still on disk.
-- `runCommand` / `binaryAvailable` resolve `.js`/`.mjs` and `.cmd` shims the same way, so npm/pnpm probes and `npm install --prefix` during setup do not hit EINVAL either.
+- `/dsh:setup` persists `{ dshNode, dshBinJs }` as the launch config. On Unix it still writes the convenience `bin/dsh` wrapper; on Windows it skips that file. Plugin-managed two-line POSIX wrappers are parsed back to `node` + `bin.js` so a 2.0.2 Windows install that wrote `bin/dsh` starts working after upgrade without an extra setup, as long as `bin.js` is still on disk. Custom wrappers that do extra work before `exec` are left unchanged (Unix spawns them as supplied).
+- `runCommand` / `binaryAvailable` resolve `.js`/`.mjs` and `.cmd` shims the same way, so npm/pnpm probes and `npm install --prefix` during setup do not hit EINVAL either. On Windows, PATH search skips extensionless POSIX shims (`npm` next to `npm.cmd`) and prefers PATHEXT so setup's npm probe does not CreateProcess the Git-Bash launcher.
 
 ### Changed
 

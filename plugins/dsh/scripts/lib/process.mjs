@@ -35,24 +35,28 @@ function fileExists(file) {
 }
 
 /**
- * Candidate names for a bare command on PATH. `.mjs`/`.js` come before
- * `.cmd`/`.bat` so test fakes and Node CLI entries win over npm shims.
- * `node` is excluded: we want `node.exe`, never a `node.mjs` fake or a
- * `node.cmd` shim (that last one is EINVAL if used as the spawn executable).
+ * Candidate names for a bare command on PATH.
+ *
+ * Windows: never the extensionless POSIX shim (`npm`, `pnpm`, `dsh`) that
+ * ships next to `*.cmd` in Node's install dir — CreateProcess cannot run
+ * it. `.mjs` test fakes come first (not in default PATHEXT), then PATHEXT
+ * so `.exe` wins over `.cmd`. `node` skips `.mjs` so we pick `node.exe`.
+ * Unix: exact name, then `.mjs`/`.js` test fakes.
  */
 function pathSearchNames(command) {
-  const names = [command];
-  if (!/^node$/i.test(command)) {
-    names.push(`${command}.mjs`, `${command}.js`);
+  if (process.platform !== "win32") {
+    return [command, `${command}.mjs`, `${command}.js`];
   }
-  if (process.platform === "win32") {
-    const pathext = (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM")
-      .split(";")
-      .map((ext) => ext.trim())
-      .filter(Boolean);
-    for (const ext of pathext) {
-      names.push(`${command}${ext}`);
-    }
+  const names = [];
+  if (!/^node$/i.test(command)) {
+    names.push(`${command}.mjs`);
+  }
+  const pathext = (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM")
+    .split(";")
+    .map((ext) => ext.trim())
+    .filter(Boolean);
+  for (const ext of pathext) {
+    names.push(`${command}${ext}`);
   }
   return names;
 }
@@ -116,8 +120,11 @@ export function resolveBatchShimToJs(cmdPath) {
 }
 
 /**
- * Parse the POSIX `exec "node" "bin.js" "$@"` wrapper `/dsh:setup` writes on
- * Unix (and used to write on Windows, where CreateProcess cannot run it).
+ * Parse the plugin-managed POSIX wrapper (`#!/bin/sh` plus a single
+ * `exec "node" "bin.js" "$@"` line). `/dsh:setup` writes exactly that on
+ * Unix, and 2.0.2 wrote it on Windows too (where CreateProcess cannot run
+ * it). Custom wrappers that do extra work before `exec` are not rewritten —
+ * Unix spawns them as supplied; Windows cannot run them.
  */
 export function parsePosixNodeWrapper(file) {
   try {
@@ -126,10 +133,7 @@ export function parsePosixNodeWrapper(file) {
       return null;
     }
     const text = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
-    if (!text.startsWith("#!")) {
-      return null;
-    }
-    const match = text.match(/^\s*exec\s+"([^"]+)"\s+"([^"]+)"\s+"\$@"\s*$/m);
+    const match = text.match(/^#![^\n]+\nexec "([^"]+)" "([^"]+)" "\$@"\n*$/);
     if (!match || !JS_ENTRY.test(match[2])) {
       return null;
     }
