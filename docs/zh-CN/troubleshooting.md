@@ -2,11 +2,12 @@
 
 [English](../troubleshooting.md) | [简体中文](troubleshooting.md)
 
-最后同步：2026-08-14。首先运行 `/dsh:check`；该命令只读，并会列出缺失条件和下一步操作。
+最后同步：2026-08-27。首先运行 `/dsh:check`；该命令只读，并会列出缺失条件和下一步操作。
 
 ## 无法找到 DeepSeek Harness
 
-- **没有 `dsh`：**运行 `/dsh:setup`。它会把 `@deepseek-ai/dsh@<pin>` 从 npm 装进插件数据目录，生成 wrapper，并创建 `cc` profile。
+- **没有 `dsh`：**运行 `/dsh:setup`。它会把 `@deepseek-ai/dsh@<pin>` 从 npm 装进插件数据目录，持久化 `node` + `lib/bin.js` 作为启动方式（Unix 上另写 POSIX wrapper；Windows 不写 `.cmd`），并创建 `cc` profile。
+- **Windows 上 `spawn EINVAL`：**Node 不能在无 `shell` 时 CreateProcess `dsh.cmd`。本插件改为 spawn `node` + `lib/bin.js`。若 `config.json` 仍只有 `.cmd` 路径且没有 `dshBinJs`，请重跑 `/dsh:setup`。一次性 `/dsh:run` / review / critique 在 Windows 上可用；`--session` 仍需要 unix socket broker。
 - **已有已构建的源码目录：**运行 `/dsh:setup --harness <absolute-path>`。目录必须已经执行过 `pnpm install && pnpm run build:lib`；插件不会代为编译。之后再跑无参数的 `/dsh:setup` 会把已持久化的源码安装迁移到 npm pin。
 - **已有 `DSH_BINARY`，但 `cc` profile 缺失或过期：**仍需运行 `/dsh:setup`。即使 `--dump-config` 里已有包名，也会把 `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` 及其已发布的 peers 装进 profile（用 `sdkProfileVersion` 跟踪：`npm:<pin>` 或 `harness:<realpath>`）。
 - **`/dsh:check` 报告 npm pin 或 cc profile 过期：**持久化的 CLI 版本或 profile 身份与当前插件 pin（或当前 `--harness` 检出）不一致。重新运行 `/dsh:setup`（要保留源码目录请再次传入 `--harness`）。

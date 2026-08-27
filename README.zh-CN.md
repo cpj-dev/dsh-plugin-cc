@@ -77,7 +77,7 @@ broker（`--session` / `--resume` / `/dsh:import`）沿用启动时的模式。�
 - Stop = kill。SDK 没有单轮取消；停掉进行中的 broker 轮次会丢掉内存会话。
 - `/dsh:import` 是压缩文本摘要，不是原生历史回放。非文本的 Claude 块（含图片）会被丢弃。
 - 视觉理解留在 Claude 侧。Slash 的 `$ARGUMENTS` 是文本；本插件不会把粘贴的图片转发给 DSH。`--model deepseek-v4-flash-vision-exp` 只改模型 id。没有 `--image` 参数。原生 DSH 视觉属于 `dsh web` / TUI。`standard` 下 DSH 可能对仓库文件调用 `read_image`——那不是把 Claude 对话图片交给 DSH 的产品路径。
-- v1 仅 POSIX，不支持 Windows。
+- 一次性运行已支持 Windows（`node` + `lib/bin.js`，不会 spawn `.cmd`）。多轮（`--session` / `--resume` / import）仍需要 unix socket broker（POSIX）。进程树终止（`pgrep`）仍是 POSIX。
 
 ## 社区与支持
 

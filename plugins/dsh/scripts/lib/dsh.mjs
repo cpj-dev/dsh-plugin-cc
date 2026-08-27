@@ -48,12 +48,23 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { readJsonFile } from "./fs.mjs";
-import { binaryAvailable, runCommand } from "./process.mjs";
+import {
+  binaryAvailable,
+  isJsCliEntry,
+  isWindowsBatchFile,
+  locateCommandOnPath,
+  parsePosixNodeWrapper,
+  resolveBatchShimToJs,
+  resolveNodeExecutable,
+  resolveSpawn,
+  runCommand,
+  spawnResolvedSync
+} from "./process.mjs";
 
 /** Default follow-up prompt when resuming a broker session without new text. */
 export const DEFAULT_CONTINUE_PROMPT =
@@ -180,10 +191,11 @@ function configInstallSource(config) {
 
 /**
  * Resolve the dsh binary and where it came from:
- * DSH_BINARY env > persisted config (`dshBinary`) > `dsh` on PATH.
+ * DSH_BINARY env > persisted `dshBinJs` / `dshBinary` > `dsh` on PATH.
  * Persisted sources: `npm-pin` (setup's npm prefix), `harness` (`--harness`
  * checkout), or generic `config`. A configured path that no longer exists
- * is reported but not used.
+ * is reported but not used. `binary` is a display/legacy path; actual
+ * spawns go through resolveDshInvocation (node + lib/bin.js).
  */
 export function describeDshBinary(env = process.env) {
   const override = env?.[BINARY_ENV];
@@ -191,20 +203,116 @@ export function describeDshBinary(env = process.env) {
     return { binary: String(override).trim(), source: "env", staleConfig: null };
   }
   const config = readPluginConfig(env);
-  const configured = config.dshBinary;
-  if (configured && String(configured).trim()) {
-    const candidate = String(configured).trim();
-    if (fs.existsSync(candidate)) {
-      return { binary: candidate, source: configInstallSource(config), staleConfig: null };
-    }
-    return { binary: DEFAULT_BINARY, source: "path", staleConfig: candidate };
+  const binJs = config.dshBinJs && String(config.dshBinJs).trim();
+  const wrapper = config.dshBinary && String(config.dshBinary).trim();
+  if (binJs && fs.existsSync(binJs)) {
+    const display = wrapper && fs.existsSync(wrapper) ? wrapper : binJs;
+    return { binary: display, source: configInstallSource(config), staleConfig: null };
+  }
+  if (wrapper && fs.existsSync(wrapper)) {
+    return { binary: wrapper, source: configInstallSource(config), staleConfig: null };
+  }
+  const stale = binJs || wrapper || null;
+  if (stale) {
+    return { binary: DEFAULT_BINARY, source: "path", staleConfig: stale };
   }
   return { binary: DEFAULT_BINARY, source: "path", staleConfig: null };
 }
 
-/** Resolve the dsh binary (see describeDshBinary for the source chain). */
+/** Resolve the dsh binary display path (see describeDshBinary for the source chain). */
 export function resolveDshBinary(env = process.env) {
   return describeDshBinary(env).binary;
+}
+
+function nodeForDsh(env = process.env, preferred = null) {
+  if (preferred && String(preferred).trim()) {
+    return resolveNodeExecutable(env, String(preferred).trim());
+  }
+  const selected = selectHarnessNode(env);
+  if (selected?.command) {
+    return resolveNodeExecutable(env, selected.command);
+  }
+  return process.execPath;
+}
+
+function invocationFromCandidate(candidate, env, source, staleConfig = null) {
+  const located = locateCommandOnPath(candidate, env) ?? candidate;
+  if (isJsCliEntry(located)) {
+    return {
+      command: nodeForDsh(env),
+      args: [located],
+      display: candidate,
+      source,
+      staleConfig,
+      shell: false
+    };
+  }
+  if (isWindowsBatchFile(located)) {
+    const js = resolveBatchShimToJs(located);
+    if (!js) {
+      throw new Error(
+        `Refusing to spawn ${located}: Node cannot CreateProcess .cmd/.bat without shell (CVE-2024-27980). Point DSH_BINARY at ${path.join("node_modules", "@deepseek-ai", "dsh", "lib", "bin.js")}, or rerun /dsh:setup.`
+      );
+    }
+    return {
+      command: nodeForDsh(env),
+      args: [js],
+      display: candidate,
+      source,
+      staleConfig,
+      shell: false
+    };
+  }
+  const posix = parsePosixNodeWrapper(located);
+  if (posix) {
+    return {
+      command: resolveNodeExecutable(env, posix.node),
+      args: [posix.binJs],
+      display: candidate,
+      source,
+      staleConfig,
+      shell: false
+    };
+  }
+  const resolved = resolveSpawn(located, [], env);
+  return {
+    command: resolved.command,
+    args: resolved.args,
+    display: candidate,
+    source,
+    staleConfig,
+    shell: false
+  };
+}
+
+/**
+ * How to spawn dsh without a `.cmd`/`.bat` and without `shell: true`:
+ * `spawn(command, [...args, ...cliFlags])` where command is a real Node
+ * executable and args start with the CLI JS entry (`lib/bin.js`).
+ */
+export function resolveDshInvocation(env = process.env, { binary = null } = {}) {
+  if (binary && String(binary).trim()) {
+    return invocationFromCandidate(String(binary).trim(), env, "explicit");
+  }
+  const override = env?.[BINARY_ENV];
+  if (override && String(override).trim()) {
+    return invocationFromCandidate(String(override).trim(), env, "env");
+  }
+  const config = readPluginConfig(env);
+  const binJs = config.dshBinJs && String(config.dshBinJs).trim();
+  if (binJs && fs.existsSync(binJs)) {
+    const described = describeDshBinary(env);
+    return {
+      command: nodeForDsh(env, config.dshNode),
+      args: [binJs],
+      display: described.binary,
+      source: described.source,
+      staleConfig: described.staleConfig,
+      shell: false
+    };
+  }
+  const described = describeDshBinary(env);
+  return invocationFromCandidate(described.binary, env, described.source, described.staleConfig);
 }
 
 /**
@@ -259,8 +367,9 @@ export function nodeVersionSatisfiesHarness(version) {
 
 /**
  * Pick the node that will run dsh: prefer the node running this bridge
- * (pinned by absolute path), else `node` on PATH (resolved at wrapper
- * runtime). Returns null when neither satisfies the harness floor.
+ * (pinned by absolute path), else `node` on PATH. Returns null when neither
+ * satisfies the harness floor. Persisted as `dshNode` and used as the spawn
+ * executable in front of `lib/bin.js`.
  */
 export function selectHarnessNode(env = process.env) {
   if (nodeVersionSatisfiesHarness(process.version)) {
@@ -300,7 +409,7 @@ export function installPinnedDshFromNpm(prefix, { actionsTaken = [] } = {}) {
   fs.mkdirSync(prefix, { recursive: true });
   const spec = `${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}`;
   process.stderr.write(`Installing ${spec} into ${prefix}...\n`);
-  const result = spawnSync("npm", ["install", "--prefix", prefix, "--no-fund", "--no-audit", spec], {
+  const result = spawnResolvedSync("npm", ["install", "--prefix", prefix, "--no-fund", "--no-audit", spec], {
     cwd: prefix,
     stdio: ["ignore", 2, 2],
     windowsHide: true
@@ -317,23 +426,38 @@ export function installPinnedDshFromNpm(prefix, { actionsTaken = [] } = {}) {
 }
 
 /**
- * Write the persistent wrapper the plugin resolves as its dsh binary: a
- * one-line shim exec'ing the chosen node against the CLI entry. DSH_BINARY-
- * style resolution needs a single executable (no arguments), and bin.js
- * must run under a harness-compatible node regardless of PATH.
+ * POSIX convenience wrapper (`exec node bin.js "$@"`). Not used as the
+ * spawn target: every dsh launch is `node` + `lib/bin.js`. CreateProcess
+ * cannot run this file on Windows, so setup skips it there and persists
+ * `{ dshNode, dshBinJs }` instead (see managedLaunchConfig).
  */
 export function writeDshWrapper(binPath, nodeCommand, env = process.env) {
+  if (process.platform === "win32") {
+    return null;
+  }
   const wrapperPath = path.join(path.dirname(resolvePluginConfigFile(env)), "bin", "dsh");
   fs.mkdirSync(path.dirname(wrapperPath), { recursive: true });
   fs.writeFileSync(wrapperPath, `#!/bin/sh\nexec "${nodeCommand}" "${binPath}" "$@"\n`, { mode: 0o755 });
   return wrapperPath;
 }
 
+/** Config keys for a CreateProcess-safe launch: node + the CLI JS entry. */
+export function managedLaunchConfig(binPath, nodeCommand, env = process.env) {
+  return {
+    dshNode: nodeCommand,
+    dshBinJs: binPath,
+    dshBinary: writeDshWrapper(binPath, nodeCommand, env)
+  };
+}
+
 /** Probe the dsh launcher (`dsh --version`). */
 export function getDshAvailability(cwd, options = {}) {
-  const binary = options.binary ?? resolveDshBinary(options.env ?? process.env);
-  const probe = binaryAvailable(binary, ["--version"], { cwd, env: options.env });
-  return { ...probe, binary };
+  const invocation = resolveDshInvocation(options.env ?? process.env, { binary: options.binary ?? null });
+  const probe = binaryAvailable(invocation.command, [...invocation.args, "--version"], {
+    cwd,
+    env: options.env
+  });
+  return { ...probe, binary: invocation.display };
 }
 
 /**
@@ -708,10 +832,15 @@ function emitProgress(onProgress, message, phase = null, extra = {}) {
  * - extraPatches: optional user-supplied overlay paths
  * - onProgress: progress reporter
  *
- * Resolves { status, stdout, stderr, finalMessage, agentPid, args, binary }.
+ * Resolves { status, stdout, stderr, finalMessage, agentPid, args, binary, spawnCommand, spawnArgs, spawnShell }.
  */
 export function runHeadlessAgent(cwd, options = {}) {
-  const binary = options.binary ?? resolveDshBinary(options.env ?? process.env);
+  let invocation;
+  try {
+    invocation = resolveDshInvocation(options.env ?? process.env, { binary: options.binary ?? null });
+  } catch (error) {
+    return Promise.reject(error);
+  }
   const prompt = String(options.prompt ?? "").trim();
   if (!prompt) {
     return Promise.reject(new Error("A prompt is required for a DeepSeek Harness run."));
@@ -736,14 +865,16 @@ export function runHeadlessAgent(cwd, options = {}) {
 
   const platform = options.platform ?? process.platform;
   const detached = options.detached ?? platform !== "win32";
+  const spawnArgs = [...invocation.args, ...args];
 
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
+    const child = spawn(invocation.command, spawnArgs, {
       cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
       detached,
-      windowsHide: true
+      windowsHide: true,
+      shell: false
     });
 
     const agentPid = child.pid ?? null;
@@ -780,7 +911,10 @@ export function runHeadlessAgent(cwd, options = {}) {
         agentPid,
         finalMessage: stdout.trimEnd(),
         args,
-        binary
+        binary: invocation.display,
+        spawnCommand: invocation.command,
+        spawnArgs,
+        spawnShell: false
       });
     });
   });
@@ -871,8 +1005,11 @@ export function buildReviewPrompt({ targetLabel, focusText, collectionGuidance, 
  * Uses `--dump-config`, which composes all layers without booting.
  */
 export function probeProfile(profileName, { mustContain = null, cwd = process.cwd(), env = process.env, binary = null } = {}) {
-  const bin = binary ?? resolveDshBinary(env);
-  const result = runCommand(bin, ["--profile", profileName, "--dump-config"], { cwd, env });
+  const invocation = resolveDshInvocation(env, { binary });
+  const result = runCommand(invocation.command, [...invocation.args, "--profile", profileName, "--dump-config"], {
+    cwd,
+    env
+  });
   if (result.status !== 0) {
     return {
       ready: false,

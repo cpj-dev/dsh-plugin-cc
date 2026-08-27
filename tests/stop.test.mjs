@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { makeTempDir, withEnv } from "./helpers.mjs";
+import { makeTempDir, withEnv, writeFakeRuntimeCli } from "./helpers.mjs";
 
 import { getBrokerStatus, stopBroker } from "../plugins/dsh/scripts/lib/broker-client.mjs";
 import { isPidAlive } from "../plugins/dsh/scripts/lib/process.mjs";
@@ -34,10 +33,7 @@ function spawnSentinel() {
 }
 
 function writeFakeRuntimeWrapper(dir) {
-  const wrapper = path.join(dir, "dsh");
-  const runtime = path.join(TESTS_DIR, "fake-sdk-runtime.mjs");
-  fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${runtime}"\n`, { mode: 0o755 });
-  return wrapper;
+  return writeFakeRuntimeCli(dir);
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -130,7 +126,7 @@ test("stop on a stale job cleans the record without signalling", async () => {
   });
 });
 
-test("stop aborts an in-flight broker run by tearing the broker down", async () => {
+test("stop aborts an in-flight broker run by tearing the broker down", { skip: process.platform === "win32" ? "broker IPC uses a unix socket" : false }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-stop-broker-");
   const binDir = makeTempDir("bin-");

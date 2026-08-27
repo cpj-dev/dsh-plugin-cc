@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { makeTempDir, withEnv } from "./helpers.mjs";
+import { makeTempDir, withEnv, writeFakeRuntimeCli } from "./helpers.mjs";
 
 import {
   BROKER_STALE_SESSION_RPC_CODE,
@@ -19,14 +18,13 @@ import { listJobs } from "../plugins/dsh/scripts/lib/state.mjs";
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE = path.join(TESTS_DIR, "..", "plugins", "dsh", "scripts", "dsh-bridge.mjs");
 
+const skipUnixSocket = process.platform === "win32" ? "broker IPC uses a unix socket" : false;
+
 function writeFakeRuntimeWrapper(dir) {
-  const wrapper = path.join(dir, "dsh");
-  const runtime = path.join(TESTS_DIR, "fake-sdk-runtime.mjs");
-  fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${runtime}"\n`, { mode: 0o755 });
-  return wrapper;
+  return writeFakeRuntimeCli(dir);
 }
 
-test("resume lifecycle: continuity while live, explicit refusal once the broker or runtime is gone", async () => {
+test("resume lifecycle: continuity while live, explicit refusal once the broker or runtime is gone", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-resume-");
   const binDir = makeTempDir("bin-");
@@ -81,7 +79,7 @@ test("resume lifecycle: continuity while live, explicit refusal once the broker 
   });
 });
 
-test("--timeout-ms is validated and forwarded to the broker", async () => {
+test("--timeout-ms is validated and forwarded to the broker", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-timeout-");
   const binDir = makeTempDir("bin-");
@@ -109,7 +107,7 @@ test("--timeout-ms is validated and forwarded to the broker", async () => {
   });
 });
 
-test("broker rejects a run whose expectedGeneration is not the live one", async () => {
+test("broker rejects a run whose expectedGeneration is not the live one", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-resume-rpc-");
   const binDir = makeTempDir("bin-");

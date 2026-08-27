@@ -22,6 +22,7 @@ import {
   normalizeReasoningEffort,
   parseStructuredOutput,
   resolveDshBinary,
+  resolveDshInvocation,
   resolveMode,
   runHeadlessAgent,
   SUPPORTED_MODES,
@@ -31,18 +32,17 @@ import {
 } from "../plugins/dsh/scripts/lib/dsh.mjs";
 
 const FAKE_DSH = path.join(path.dirname(fileURLToPath(import.meta.url)), "fake-dsh-fixture.mjs");
-const FAKE_DSH_CMD = process.execPath; // run the fixture through node
 const BRIDGE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "plugins", "dsh", "scripts", "dsh-bridge.mjs");
 
 function fakeDshEnv(extra = {}) {
-  // DSH_BINARY cannot carry arguments, so tests use a wrapper script.
   return extra;
 }
 
+/** DSH_BINARY may be the JS CLI entry; spawn prefixes the current node. */
 function writeFakeDshWrapper(dir) {
-  const wrapper = path.join(dir, "dsh");
-  fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${FAKE_DSH_CMD}" "${FAKE_DSH}" "$@"\n`, { mode: 0o755 });
-  return wrapper;
+  const dest = path.join(dir, "dsh.mjs");
+  fs.copyFileSync(FAKE_DSH, dest);
+  return dest;
 }
 
 test("buildHeadlessArgs keeps launcher flags first and guards the task with --", () => {
@@ -232,6 +232,13 @@ test("runHeadlessAgent spawns the exact dsh invocation with the sandbox env", as
       });
       assert.equal(result.status, 0);
       assert.equal(result.finalMessage, "final answer");
+      assert.equal(result.spawnShell, false);
+      assert.equal(path.basename(result.spawnCommand).replace(/\.exe$/i, ""), "node");
+      assert.equal(result.spawnArgs[0], wrapper);
+      assert.doesNotMatch(result.spawnCommand, /\.(cmd|bat)$/i);
+      const invocation = resolveDshInvocation();
+      assert.equal(invocation.shell, false);
+      assert.deepEqual(invocation.args, [wrapper]);
 
       const record = JSON.parse(fs.readFileSync(recordFile, "utf8"));
       assert.deepEqual(record.argv, ["--profile", "headless", "--patch", overlay, "--", "do the thing"]);

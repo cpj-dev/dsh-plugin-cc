@@ -6,7 +6,8 @@ Start with `/dsh:check`. It is read-only and reports the exact missing prerequis
 
 ## Setup cannot find DeepSeek Harness
 
-- **No `dsh`:** run `/dsh:setup`. It installs `@deepseek-ai/dsh@<pin>` from npm into the plugin data directory, writes a wrapper, and creates the `cc` profile.
+- **No `dsh`:** run `/dsh:setup`. It installs `@deepseek-ai/dsh@<pin>` from npm into the plugin data directory, persists `node` + `lib/bin.js` as the launch (a POSIX wrapper is extra on Unix; Windows does not write a `.cmd`), and creates the `cc` profile.
+- **`spawn EINVAL` on Windows:** Node will not CreateProcess `dsh.cmd` without `shell`. This plugin spawns `node` + `lib/bin.js` instead. Rerun `/dsh:setup` if `config.json` still only has a `.cmd` path and no `dshBinJs`. One-shot `/dsh:run` / review / critique work on Windows; `--session` still needs a unix-socket broker.
 - **Existing built checkout:** run `/dsh:setup --harness <absolute-path>`. The directory must already be installed and built (`pnpm install && pnpm run build:lib`); the plugin will not compile it. A later no-args `/dsh:setup` migrates a persisted source install to the npm pin.
 - **Existing `DSH_BINARY`, missing or stale `cc` profile:** run `/dsh:setup`. It adds `@deepseek-ai/dsh-sdk-jsonrpc-server@<pin>` and that package's published peers into the profile even if `--dump-config` already names the package (tracked as `sdkProfileVersion`: `npm:<pin>` or `harness:<realpath>`).
 - **`/dsh:check` says the npm pin or cc profile is stale:** the persisted CLI version or profile identity does not match this plugin release (or the current `--harness` checkout). Rerun `/dsh:setup` (pass `--harness` again to keep a checkout).

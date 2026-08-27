@@ -7,7 +7,7 @@
 - **Every DSH assumption is a row in [dsh-compat.md](dsh-compat.md)** with a verification command. New assumption → new row, same commit.
 - **Third-party provenance goes in [NOTICE](../NOTICE).** Mechanism ports, research citations, and architectural inspiration are named there with the correct license and URL in the same commit. Do not guess MIT. See CONTRIBUTING.md ground rule 4.
 - **stdout discipline.** Bridge stdout is user-facing rendered text (or `--json` payloads); progress goes to stderr and the job log. Broker-runtime stdout is JSON-RPC only — never add a stdout logger to the `cc` profile.
-- **POSIX only for v1** (unix sockets, pgrep). Gate any Windows work behind its own design pass.
+- **Windows one-shot is supported** (spawn `node` + `lib/bin.js`, never `.cmd` / `shell: true`). The broker (unix sockets) and `terminateProcessTree` (`pgrep`) remain POSIX.
 
 ## Adding a slash command
 

@@ -5,7 +5,7 @@ import test from "node:test";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { makeTempDir, withEnv } from "./helpers.mjs";
+import { makeTempDir, withEnv, writeFakeRuntimeCli } from "./helpers.mjs";
 
 import {
   brokerRequest,
@@ -25,26 +25,21 @@ function countBrokerDaemons(stateDir) {
   return out.split("\n").filter((line) => line.includes("dsh-broker.mjs") && line.includes(stateDir)).length;
 }
 
+const skipUnixSocket = process.platform === "win32" ? "broker IPC uses a unix socket" : false;
+
 /**
- * A wrapper `dsh` that records its argv (`--profile cc --patch ...`), then
+ * A JS `dsh` that records its argv (`--profile cc --patch ...`), then
  * execs the fake SDK runtime, so the broker's spawn path runs unmodified.
  */
 function writeFakeRuntimeWrapper(dir) {
-  const wrapper = path.join(dir, "dsh");
-  const runtime = path.join(TESTS_DIR, "fake-sdk-runtime.mjs");
-  fs.writeFileSync(
-    wrapper,
-    `#!/bin/sh\nprintf '%s\\n' "$@" > "${dir}/runtime-argv.txt"\nexec "${process.execPath}" "${runtime}"\n`,
-    { mode: 0o755 }
-  );
-  return wrapper;
+  return writeFakeRuntimeCli(dir);
 }
 
 function readRuntimeArgv(dir) {
   return fs.readFileSync(path.join(dir, "runtime-argv.txt"), "utf8").split("\n").filter(Boolean);
 }
 
-test("broker multi-turn: session continuity, status, and shutdown", async () => {
+test("broker multi-turn: session continuity, status, and shutdown", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-broker-");
   const binDir = makeTempDir("bin-");
@@ -95,7 +90,7 @@ test("broker multi-turn: session continuity, status, and shutdown", async () => 
   });
 });
 
-test("a minimal-mode broker composes the two-tool overlay and refuses a standard request", async () => {
+test("a minimal-mode broker composes the two-tool overlay and refuses a standard request", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-broker-minimal-");
   const binDir = makeTempDir("bin-");
@@ -124,7 +119,7 @@ test("a minimal-mode broker composes the two-tool overlay and refuses a standard
   });
 });
 
-test("an anchored-standard broker inserts the bootstrap overlay and refuses other modes", async () => {
+test("an anchored-standard broker inserts the bootstrap overlay and refuses other modes", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-broker-anchored-");
   const binDir = makeTempDir("bin-");
@@ -159,7 +154,7 @@ test("an anchored-standard broker inserts the bootstrap overlay and refuses othe
   });
 });
 
-test("a timed-out run frees the broker at the requested deadline", async () => {
+test("a timed-out run frees the broker at the requested deadline", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-broker-timeout-");
   const binDir = makeTempDir("bin-");
@@ -186,7 +181,7 @@ test("a timed-out run frees the broker at the requested deadline", async () => {
   });
 });
 
-test("concurrent ensureBroker calls converge on exactly one daemon", async () => {
+test("concurrent ensureBroker calls converge on exactly one daemon", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-broker-race-");
   const binDir = makeTempDir("bin-");
@@ -234,7 +229,7 @@ test("concurrent ensureBroker calls converge on exactly one daemon", async () =>
   });
 });
 
-test("ensureBroker reclaims a stale start lock", async () => {
+test("ensureBroker reclaims a stale start lock", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-broker-stale-");
   const binDir = makeTempDir("bin-");
@@ -255,7 +250,7 @@ test("ensureBroker reclaims a stale start lock", async () => {
   });
 });
 
-test("daemon startup: dead-owner socket is taken over, live-owner socket is refused", async () => {
+test("daemon startup: dead-owner socket is taken over, live-owner socket is refused", { skip: skipUnixSocket }, async () => {
   const dataDir = makeTempDir();
   const workspace = makeTempDir("ws-broker-sock-");
   const binDir = makeTempDir("bin-");

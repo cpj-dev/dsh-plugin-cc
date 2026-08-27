@@ -48,17 +48,17 @@ import {
   pinnedSdkServerInstallSpecs,
   probeProfile,
   readPluginConfig,
-  resolveDshBinary,
+  resolveDshInvocation,
   resolveNpmCliBin,
   resolveNpmInstallDir,
   runHeadlessAgent,
   schemaInstructionsFromPath,
   selectHarnessNode,
-  writeDshWrapper,
   writeModelOverlay,
   writeModeOverlay,
   writePluginConfig,
-  writeUnattendedOverlay
+  writeUnattendedOverlay,
+  managedLaunchConfig
 } from "./lib/dsh.mjs";
 import {
   BROKER_STALE_SESSION_RPC_CODE,
@@ -79,7 +79,7 @@ import {
   sortJobsNewestFirst
 } from "./lib/job-control.mjs";
 import { describePluginBuild } from "./lib/plugin-meta.mjs";
-import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
+import { binaryAvailable, runCommand, terminateProcessTree } from "./lib/process.mjs";
 import { interpolateTemplate, loadPromptTemplate } from "./lib/prompts.mjs";
 import { compressTranscript, resolveClaudeSessionPath } from "./lib/claude-session-transfer.mjs";
 import {
@@ -401,9 +401,9 @@ function linkBuiltHarnessCheckout(checkoutRoot, { actionsTaken, harnessNode }) {
     );
   }
   resolveSdkServerDir(inspection.root);
-  const wrapper = writeDshWrapper(inspection.binPath, harnessNode.command);
+  const launch = managedLaunchConfig(inspection.binPath, harnessNode.command);
   writePluginConfig({
-    dshBinary: wrapper,
+    ...launch,
     dshInstall: "harness",
     harnessCheckout: inspection.root,
     npmPrefix: null,
@@ -413,8 +413,11 @@ function linkBuiltHarnessCheckout(checkoutRoot, { actionsTaken, harnessNode }) {
     // the stored identity (`npm:<pin>` / `harness:<realpath>`) with the
     // identity this run will write after a successful plugin add.
   });
+  const launchLabel = launch.dshBinary
+    ? `wrapper at ${launch.dshBinary}`
+    : `node ${harnessNode.command} ${inspection.binPath}`;
   actionsTaken.push(
-    `Linked dsh to the source checkout at ${inspection.root} (${inspection.version ?? "unknown version"}${inspection.commit ? ` @ ${inspection.commit}` : ""}; wrapper at ${wrapper}, node ${harnessNode.version}).`
+    `Linked dsh to the source checkout at ${inspection.root} (${inspection.version ?? "unknown version"}${inspection.commit ? ` @ ${inspection.commit}` : ""}; ${launchLabel}, node ${harnessNode.version}).`
   );
   return inspection;
 }
@@ -466,8 +469,8 @@ function expectedSdkProfileIdentity(config, binarySource) {
  * reports it and handleSetup repairs on it, so a damaged install cannot look
  * healthy to one and broken to the other. The two halves are separate
  * because they need different repairs — `cliOk` (the pinned package) takes a
- * reinstall, `wrapperOk` (the shim dsh resolution goes through) only takes a
- * rewrite.
+ * reinstall, `wrapperOk` (the node + bin.js launch dsh resolution goes
+ * through) only takes a rewrite of the persisted invocation.
  */
 function describeNpmInstall(config) {
   if (config.dshInstall !== "npm") {
@@ -478,8 +481,11 @@ function describeNpmInstall(config) {
   const binPath = prefix ? resolveNpmCliBin(prefix) : null;
   const binOk = Boolean(binPath) && fs.existsSync(binPath);
   const cliOk = binOk && version === HARNESS_NPM_VERSION;
+  const binJs = config.dshBinJs ?? null;
   const wrapper = config.dshBinary ?? null;
-  const wrapperOk = Boolean(wrapper) && fs.existsSync(wrapper);
+  const launchOk =
+    (Boolean(binJs) && fs.existsSync(binJs) && Boolean(config.dshNode)) ||
+    (Boolean(wrapper) && fs.existsSync(wrapper));
   let detail = `${prefix} (${HARNESS_CLI_PACKAGE}@${version})`;
   if (!prefix) {
     detail = `${HARNESS_CLI_PACKAGE} is recorded as an npm install with no prefix`;
@@ -487,10 +493,10 @@ function describeNpmInstall(config) {
     detail = `${prefix} is missing ${binPath}`;
   } else if (!cliOk) {
     detail = `${prefix} (${HARNESS_CLI_PACKAGE}@${version ?? "unknown"}; plugin pin is ${HARNESS_NPM_VERSION})`;
-  } else if (!wrapperOk) {
-    detail = `${prefix} (${HARNESS_CLI_PACKAGE}@${version}); the managed wrapper ${wrapper ?? "(unset)"} is missing`;
+  } else if (!launchOk) {
+    detail = `${prefix} (${HARNESS_CLI_PACKAGE}@${version}); the managed node + bin.js launch is missing`;
   }
-  return { ok: cliOk && wrapperOk, cliOk, wrapperOk, prefix, version, detail };
+  return { ok: cliOk && launchOk, cliOk, wrapperOk: launchOk, prefix, version, detail };
 }
 
 /** True when persisted config is a source checkout, including pre-npm-pin installs. */
@@ -509,9 +515,9 @@ function requireHarnessNode() {
 }
 
 function persistNpmCli(prefix, binPath, harnessNode, actionsTaken) {
-  const wrapper = writeDshWrapper(binPath, harnessNode.command);
+  const launch = managedLaunchConfig(binPath, harnessNode.command);
   writePluginConfig({
-    dshBinary: wrapper,
+    ...launch,
     dshInstall: "npm",
     npmPrefix: prefix,
     npmVersion: HARNESS_NPM_VERSION,
@@ -521,8 +527,11 @@ function persistNpmCli(prefix, binPath, harnessNode, actionsTaken) {
     // failed add must retry even if dump-config already names the package.
     sdkProfileVersion: null
   });
+  const launchLabel = launch.dshBinary
+    ? `wrapper at ${launch.dshBinary}`
+    : `node ${harnessNode.command} ${binPath}`;
   actionsTaken.push(
-    `Linked dsh to the npm install at ${prefix} (${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}; wrapper at ${wrapper}, node ${harnessNode.version}).`
+    `Linked dsh to the npm install at ${prefix} (${HARNESS_CLI_PACKAGE}@${HARNESS_NPM_VERSION}; ${launchLabel}, node ${harnessNode.version}).`
   );
 }
 
@@ -566,12 +575,15 @@ async function handleSetup(argv) {
     // run retains a checkout.
     const npmInstall = describeNpmInstall(config);
     if (npmInstall?.cliOk && !npmInstall.wrapperOk) {
-      // Only the shim is gone. Rewriting it converges without a reinstall —
-      // and without a network — while the pinned package stays untouched, so
-      // the cc profile keeps its identity and needs no re-add.
-      const wrapper = writeDshWrapper(resolveNpmCliBin(npmInstall.prefix), requireHarnessNode().command);
-      writePluginConfig({ dshBinary: wrapper });
-      actionsTaken.push(`Rewrote the managed dsh wrapper at ${wrapper} (${HARNESS_CLI_PACKAGE}@${npmInstall.version} was intact).`);
+      // Only the launch config is gone. Rewriting it converges without a
+      // reinstall — and without a network — while the pinned package stays
+      // untouched, so the cc profile keeps its identity and needs no re-add.
+      const launch = managedLaunchConfig(resolveNpmCliBin(npmInstall.prefix), requireHarnessNode().command);
+      writePluginConfig(launch);
+      const launchLabel = launch.dshBinary ?? `${launch.dshNode} ${launch.dshBinJs}`;
+      actionsTaken.push(
+        `Rewrote the managed dsh launch at ${launchLabel} (${HARNESS_CLI_PACKAGE}@${npmInstall.version} was intact).`
+      );
     } else if (!dshAvailable || (npmInstall && !npmInstall.ok) || isLegacySourceInstall(config)) {
       const harnessNode = requireHarnessNode();
       const prefix = resolveNpmInstallDir();
@@ -581,7 +593,6 @@ async function handleSetup(argv) {
   }
 
   ensureDshAvailable(cwd);
-  const binary = resolveDshBinary();
 
   // 1. Ensure the cc profile exists with the jsonrpc server installed.
   //    `dsh plugin --profile cc add <spec>` initializes a missing profile
@@ -602,8 +613,10 @@ async function handleSetup(argv) {
     if (!pnpmStatus.available) {
       throw new Error("Profile setup needs pnpm on PATH (dsh plugin forwards to pnpm). Install pnpm (`corepack enable`) and rerun /dsh:setup.");
     }
-    const { runCommand } = await import("./lib/process.mjs");
-    const install = runCommand(binary, ["plugin", "--profile", "cc", "add", ...specs], { cwd });
+    const invocation = resolveDshInvocation();
+    const install = runCommand(invocation.command, [...invocation.args, "plugin", "--profile", "cc", "add", ...specs], {
+      cwd
+    });
     if (install.status !== 0) {
       throw new Error(`dsh plugin --profile cc add ${specs.join(" ")} failed:\n${(install.stderr || install.stdout).trim().slice(0, 800)}`);
     }

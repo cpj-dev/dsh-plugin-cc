@@ -8,6 +8,21 @@ since the last bump indistinguishable to a user reading `/plugin` or filing a bu
 `tests/version.test.mjs` and the `version` CI job enforce it; there is no
 `Unreleased` section to accumulate in.
 
+## 2.0.3 (2026-08-27)
+
+Windows one-shot runs no longer fail with `spawn EINVAL`. Node 18.20.2+, 20.12.2+, 22, and 24 refuse to CreateProcess a `.cmd`/`.bat` without `shell` (CVE-2024-27980). The plugin now spawns a real `node` process plus the CLI JS entry (`lib/bin.js`) at every dsh site (headless, broker, `--version` / `--dump-config` probes, `dsh plugin add`). `shell: true` is not used.
+
+### Fixed
+
+- `/dsh:run`, review, critique, and other one-shot paths on Windows spawn `node` + `lib/bin.js` instead of npm's `dsh.cmd` shim or a POSIX `#!/bin/sh` wrapper CreateProcess cannot run.
+- `/dsh:setup` persists `{ dshNode, dshBinJs }` as the launch config. On Unix it still writes the convenience `bin/dsh` wrapper; on Windows it skips that file. Plugin-managed two-line POSIX wrappers are parsed back to `node` + `bin.js` so a 2.0.2 Windows install that wrote `bin/dsh` starts working after upgrade without an extra setup, as long as `bin.js` is still on disk. Custom wrappers that do extra work before `exec` are left unchanged (Unix spawns them as supplied).
+- `runCommand` / `binaryAvailable` resolve `.js`/`.mjs` and `.cmd` shims the same way, so npm/pnpm probes and `npm install --prefix` during setup do not hit EINVAL either. On Windows, PATH search skips extensionless POSIX shims (`npm` next to `npm.cmd`) and prefers PATHEXT so setup's npm probe does not CreateProcess the Git-Bash launcher.
+
+### Changed
+
+- CI `test` matrix includes `windows-latest` (fail-fast remains false). `npm test` expands `tests/*.test.mjs` in `scripts/run-tests.mjs` so Windows cmd + Node 20 actually run the suite. Broker/resume/`terminateProcessTree` tests skip there: multi-turn still needs unix sockets and `pgrep`.
+- One-shot Windows is supported. `--session` / `--resume` / `/dsh:import` remain POSIX (unix socket broker).
+
 ## 2.0.2 (2026-08-25)
 
 Pin bump to `@deepseek-ai/dsh@0.1.1-rc.2` and `@deepseek-ai/dsh-sdk-jsonrpc-server@0.1.1-rc.2`. Existing machines pick up the new CLI and `cc` profile plugins only after `/dsh:setup`; `/dsh:check` reports a stale pin as not ready until then. In-memory broker sessions do not survive a pin bump.

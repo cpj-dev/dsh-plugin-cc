@@ -10,7 +10,7 @@ Claude Code slash command / dsh-delegate agent
         ▼
 scripts/dsh-bridge.mjs  (subcommand dispatcher; stdout = user-facing result)
         │
-        ├── one-shot path ──► spawn: dsh --profile headless
+        ├── one-shot path ──► spawn: node <lib/bin.js> --profile headless
         │                       --patch <generated unattended overlay (per mode)>
         │                       [--patch <generated agent-mode overlay (none for standard; minimal / anchored-standard opt-in)>]
         │                       [--patch <generated model overlay>] -- "<prompt>"
@@ -20,7 +20,7 @@ scripts/dsh-bridge.mjs  (subcommand dispatcher; stdout = user-facing result)
         └── multi-turn path ─► scripts/dsh-broker.mjs (per-workspace daemon, unix socket)
                                   │ owns
                                   ▼
-                               dsh --profile cc --patch <generated unattended overlay>
+                               node <lib/bin.js> --profile cc --patch <generated unattended overlay>
                                   [--patch <generated agent-mode overlay>]
                                   (dsh-base + SDK JSON-RPC server on stdio)
                                   sessions get-or-created by sessionId inside this
