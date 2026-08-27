@@ -2,11 +2,12 @@
 
 ## Automated (`npm test`)
 
-`npm test` (= `node --test tests/*.test.mjs`) — pure-Node tests, no network, no real dsh, no API key. The glob is left unquoted so the shell expands it: Node 20's test runner does not expand globs and would otherwise look for a literal `tests/*.test.mjs` file.
+`npm test` (= `node scripts/run-tests.mjs`, which expands `tests/*.test.mjs` and runs `node --test` on that list) — pure-Node tests, no network, no real dsh, no API key. The expander exists because Windows cmd does not expand globs and Node 20's test runner does not either; a quoted or unquoted `tests/*.test.mjs` in package.json would look for a literal filename on windows-latest Node 20.
 
 - `args.test.mjs` — argv parsing and raw `$ARGUMENTS` splitting.
 - `state.test.mjs` — state dir resolution, job upsert/prune (incl. log-file cleanup), terminal-claim races (single winner), and the SessionEnd-vs-writer concurrency race (`session-cleanup-writer.mjs` fixture).
-- `dsh.test.mjs` — headless argv composition, model overlay YAML, mode overlays (minimal disable list + shared bootstrap insert, anchored-standard bootstrap insert without tool disables), structured-output parsing, a full `runHeadlessAgent` round-trip against the fake dsh fixture, binary-resolution order (env → npm-pin / harness / config → PATH), and source-checkout inspection.
+- `dsh.test.mjs` — headless argv composition, model overlay YAML, mode overlays (minimal disable list + shared bootstrap insert, anchored-standard bootstrap insert without tool disables), structured-output parsing, a full `runHeadlessAgent` round-trip against the fake dsh fixture, binary-resolution order (env → npm-pin / harness / config → PATH), and source-checkout inspection. Spawn argv is `node` + the JS CLI entry, never a `.cmd` and never `shell: true`.
+- `spawn.test.mjs` — CVE-2024-27980 contract: rewrite a `.cmd` shim to `node` + JS; POSIX wrapper parse; persisted `{ dshNode, dshBinJs }`; `runCommand` / `binaryAvailable` against a fake `.cmd`; refuse `node.cmd` as the Node executable; a headless run against a fake `.cmd` DSH_BINARY. On windows-latest, a live `spawnSync(.cmd)` without shell documents Node's `EINVAL`.
 - `request-snapshot.test.mjs` / `tool-bootstrap.test.mjs` — assemble/request snapshot reducer and the bootstrap filter (promotion, per-session isolation, assemble-time phase freeze vs persist-then-execute — 0.1.1-rc.2 still this shape — outermost assemble post-transform, pre-step strip, hidden-tool `deny`, filter-failure fallback, pre-step + `request/header` JSONL recorder against the EpochHeader shape `{ config, tools }`, which 0.1.1-rc.2 still uses) against a fake Cordis ctx; no real dsh.
 - `setup.test.mjs` — `setup` npm-prefix install + registry SDK-server specs against a fake npm/dsh, `--harness` link of a built checkout (absolute-path SDK-server install), refusal of unbuilt / SDK-less checkouts, migration of pre-npm source configs, npm → `--harness` and checkout A → B profile switches, external `DSH_BINARY` profile repair (no npm prefix, including an already-ready profile), stale npm-pin reinstall and failed-refresh retry (CLI + `sdkProfileVersion` identity `npm:<pin>` / `harness:<realpath>`), and `check`'s source reporting plus stale pin/identity unreadiness (skipped on Node < 22.19, the harness floor).
 - `git.test.mjs` — review-target resolution (incl. bad `--base` refusal), context collection, and the empty-diff vs failed-diff distinction on throwaway git repos.
@@ -17,7 +18,9 @@
 - `resume.test.mjs` — resume continuity plus explicit refusal after broker stop/restart (generation checks), `--timeout-ms` validation/forwarding.
 - `docs.test.mjs` — local Markdown link integrity, required community-health files (including LICENSE and NOTICE), NOTICE license labels, reciprocal English/Chinese entry links, and the public/private documentation ignore boundary.
 
-Fixtures: `fake-dsh-fixture.mjs` (records argv/env, prints canned output — point `DSH_BINARY` at a wrapper for it), `fake-sdk-runtime.mjs` (speaks the SDK wire protocol; prompt directives `hang` and `sleep:<ms>` drive timeout tests), `ensure-broker-child.mjs` and `session-cleanup-writer.mjs` (child processes for real cross-process races), `helpers.mjs` (temp dirs, env isolation).
+Fixtures: `fake-dsh-fixture.mjs` (records argv/env, prints canned output — point `DSH_BINARY` at the `.mjs` file; spawn prefixes `node`), `fake-sdk-runtime.mjs` (speaks the SDK wire protocol; prompt directives `hang` and `sleep:<ms>` drive timeout tests), `ensure-broker-child.mjs` and `session-cleanup-writer.mjs` (child processes for real cross-process races), `helpers.mjs` (temp dirs, env isolation, `writeFakeRuntimeCli`).
+
+The GitHub Actions `test` matrix is `ubuntu-latest`, `macos-latest`, and `windows-latest` × Node 20 and 22 (`fail-fast: false`). Broker, resume, and `terminateProcessTree` tests skip on Windows (unix sockets / `pgrep`). The windows-latest job is the proof that `.cmd` spawn throws `EINVAL` and that the plugin path does not.
 
 Tests set `CLAUDE_PLUGIN_DATA` to a per-test temp dir; never let a test touch the real state root.
 

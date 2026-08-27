@@ -21,7 +21,9 @@ if (recordFile) {
         env: {
           DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? null,
           DSH_TOOLS_MODE: process.env.DSH_TOOLS_MODE ?? null
-        }
+        },
+        execPath: process.execPath,
+        script: process.argv[1]
       },
       null,
       2

@@ -20,7 +20,9 @@ function spawnReady(script) {
   });
 }
 
-test("terminateProcessTree SIGKILLs a SIGTERM-ignoring process before resolving", async () => {
+const skipPosixTree = process.platform === "win32" ? "terminateProcessTree is POSIX-only (pgrep)" : false;
+
+test("terminateProcessTree SIGKILLs a SIGTERM-ignoring process before resolving", { skip: skipPosixTree }, async () => {
   const child = await spawnReady(
     "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); console.log('ready');"
   );
@@ -30,7 +32,7 @@ test("terminateProcessTree SIGKILLs a SIGTERM-ignoring process before resolving"
   assert.equal(isPidAlive(child.pid), false);
 });
 
-test("terminateProcessTree resolves fast for a cooperative process", async () => {
+test("terminateProcessTree resolves fast for a cooperative process", { skip: skipPosixTree }, async () => {
   const child = await spawnReady("setInterval(() => {}, 1000); console.log('ready');");
   child.on("exit", () => {});
   const startedAt = Date.now();
@@ -39,7 +41,7 @@ test("terminateProcessTree resolves fast for a cooperative process", async () =>
   assert.equal(isPidAlive(child.pid), false);
 });
 
-test("terminateProcessTree kills descendants too", async () => {
+test("terminateProcessTree kills descendants too", { skip: skipPosixTree }, async () => {
   // Parent spawns a grandchild and prints its pid; wait for both in one listener.
   const script = `
     const { spawn } = require('node:child_process');

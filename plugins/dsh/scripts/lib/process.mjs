@@ -1,17 +1,242 @@
 /** Subprocess helpers: sync command runs, availability probes, tree kill. */
 
-import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
+import { execFileSync, spawnSync } from "node:child_process";
+
+const JS_ENTRY = /\.(cjs|mjs|js)$/i;
+const BATCH_FILE = /\.(cmd|bat)$/i;
+
+/** True when `command` is a Windows batch shim Node refuses to CreateProcess without a shell. */
+export function isWindowsBatchFile(command) {
+  return BATCH_FILE.test(String(command ?? ""));
+}
+
+/** True when `command` is a JS CLI entry we should run with `node`. */
+export function isJsCliEntry(command) {
+  return JS_ENTRY.test(String(command ?? ""));
+}
+
+function envPathValue(env = process.env) {
+  if (process.platform !== "win32") {
+    return env?.PATH ?? "";
+  }
+  const key = Object.keys(env ?? {}).find((name) => name.toLowerCase() === "path");
+  return key ? env[key] : "";
+}
+
+function fileExists(file) {
+  try {
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Candidate names for a bare command on PATH. `.mjs`/`.js` come before
+ * `.cmd`/`.bat` so test fakes and Node CLI entries win over npm shims.
+ * `node` is excluded: we want `node.exe`, never a `node.mjs` fake or a
+ * `node.cmd` shim (that last one is EINVAL if used as the spawn executable).
+ */
+function pathSearchNames(command) {
+  const names = [command];
+  if (!/^node$/i.test(command)) {
+    names.push(`${command}.mjs`, `${command}.js`);
+  }
+  if (process.platform === "win32") {
+    const pathext = (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM")
+      .split(";")
+      .map((ext) => ext.trim())
+      .filter(Boolean);
+    for (const ext of pathext) {
+      names.push(`${command}${ext}`);
+    }
+  }
+  return names;
+}
+
+/** Resolve a bare command name to a file on PATH, or null. */
+export function locateCommandOnPath(command, env = process.env) {
+  if (!command || String(command).includes(path.sep) || path.isAbsolute(command)) {
+    return fileExists(command) ? command : null;
+  }
+  const dirs = envPathValue(env)
+    .split(path.delimiter)
+    .filter(Boolean);
+  for (const dir of dirs) {
+    for (const name of pathSearchNames(command)) {
+      const candidate = path.join(dir, name);
+      if (fileExists(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Read an npm/cmd-shim `.cmd`/`.bat` and return the JS file it would have
+ * handed to `node`. Never execute the shim — Node 18.20.2+/20.12.2+/22+/24
+ * throw `EINVAL` on `spawn(.cmd)` without `shell` (CVE-2024-27980 / DEP0190).
+ */
+export function resolveBatchShimToJs(cmdPath) {
+  let text;
+  try {
+    text = fs.readFileSync(cmdPath, "utf8");
+  } catch {
+    return null;
+  }
+  const dir = path.dirname(cmdPath);
+  const quoted = [...text.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  for (const raw of quoted.reverse()) {
+    const expanded = raw.replace(/%~dp0%?/gi, `${dir}${path.sep}`).replace(/%dp0%/gi, `${dir}${path.sep}`);
+    if (!JS_ENTRY.test(expanded)) {
+      continue;
+    }
+    const candidate = path.resolve(dir, expanded);
+    if (fileExists(candidate)) {
+      return candidate;
+    }
+  }
+  const guesses = [
+    path.join(dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
+    path.join(dir, "..", "@deepseek-ai", "dsh", "lib", "bin.js"),
+    path.join(dir, "node_modules", "npm", "bin", "npm-cli.js"),
+    path.join(dir, "..", "npm", "bin", "npm-cli.js"),
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")
+  ];
+  for (const guess of guesses) {
+    if (fileExists(guess)) {
+      return guess;
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse the POSIX `exec "node" "bin.js" "$@"` wrapper `/dsh:setup` writes on
+ * Unix (and used to write on Windows, where CreateProcess cannot run it).
+ */
+export function parsePosixNodeWrapper(file) {
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size > 16 * 1024) {
+      return null;
+    }
+    const text = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    if (!text.startsWith("#!")) {
+      return null;
+    }
+    const match = text.match(/^\s*exec\s+"([^"]+)"\s+"([^"]+)"\s+"\$@"\s*$/m);
+    if (!match || !JS_ENTRY.test(match[2])) {
+      return null;
+    }
+    return { node: match[1], binJs: match[2] };
+  } catch {
+    return null;
+  }
+}
+
+function isUsableNodeBinary(file) {
+  if (!file || isWindowsBatchFile(file) || isJsCliEntry(file)) {
+    return false;
+  }
+  if (path.isAbsolute(file) || String(file).includes(path.sep)) {
+    return fileExists(file);
+  }
+  return false;
+}
+
+/**
+ * A CreateProcess-safe Node executable: never `.cmd`/`.bat`, never a JS
+ * file. Prefers `preferred` (persisted `dshNode` or a wrapper's node path),
+ * then `node` on PATH, then `process.execPath`.
+ */
+export function resolveNodeExecutable(env = process.env, preferred = null) {
+  const candidates = [];
+  if (preferred && String(preferred).trim() && String(preferred).trim() !== "node") {
+    candidates.push(String(preferred).trim());
+  }
+  const located = locateCommandOnPath("node", env);
+  if (located) {
+    candidates.push(located);
+  }
+  candidates.push(process.execPath);
+  for (const candidate of candidates) {
+    if (isUsableNodeBinary(candidate)) {
+      return candidate;
+    }
+  }
+  return process.execPath;
+}
+
+function looksLikeNodeExecutable(original, located) {
+  const base = path.basename(String(located ?? original));
+  return original === "node" || /^node(\.exe|\.cmd|\.bat)?$/i.test(base);
+}
+
+/**
+ * Turn `(command, args)` into a CreateProcess-safe spawn: never a `.cmd`/
+ * `.bat` as the executable, never `shell: true`. JS entries and npm shims
+ * become `node <cli.js> ...args`.
+ */
+export function resolveSpawn(command, args = [], env = process.env) {
+  const original = String(command ?? "");
+  const located = locateCommandOnPath(original, env) ?? original;
+
+  // `node` / `node.exe` / a `node.cmd` PATH shim: run a real Node binary,
+  // never CreateProcess the batch file and never treat node.cmd as a CLI shim.
+  if (looksLikeNodeExecutable(original, located)) {
+    return { command: resolveNodeExecutable(env, located), args: [...args], shell: false };
+  }
+
+  if (isJsCliEntry(located)) {
+    return { command: resolveNodeExecutable(env), args: [located, ...args], shell: false };
+  }
+  if (isWindowsBatchFile(located)) {
+    const js = resolveBatchShimToJs(located);
+    if (!js) {
+      throw new Error(
+        `Refusing to spawn ${located}: Node cannot CreateProcess .cmd/.bat without shell (CVE-2024-27980). Point DSH_BINARY at a JS CLI entry, or rerun /dsh:setup.`
+      );
+    }
+    return { command: resolveNodeExecutable(env), args: [js, ...args], shell: false };
+  }
+  const posix = parsePosixNodeWrapper(located);
+  if (posix) {
+    return { command: resolveNodeExecutable(env, posix.node), args: [posix.binJs, ...args], shell: false };
+  }
+  return { command: located, args: [...args], shell: false };
+}
+
+/** spawnSync after resolveSpawn; never sets `shell: true`. */
+export function spawnResolvedSync(command, args = [], options = {}) {
+  const resolved = resolveSpawn(command, args, options.env ?? process.env);
+  return spawnSync(resolved.command, resolved.args, {
+    ...options,
+    windowsHide: options.windowsHide ?? true,
+    shell: false
+  });
+}
 
 /** Run a command synchronously; never throws, returns { status, stdout, stderr, error }. */
 export function runCommand(command, args = [], options = {}) {
-  const result = spawnSync(command, args, {
+  let resolved;
+  try {
+    resolved = resolveSpawn(command, args, options.env ?? process.env);
+  } catch (error) {
+    return { status: 1, stdout: "", stderr: error.message, error };
+  }
+  const result = spawnSync(resolved.command, resolved.args, {
     cwd: options.cwd,
     env: options.env ?? process.env,
     input: options.input,
     encoding: "utf8",
     maxBuffer: options.maxBuffer ?? 16 * 1024 * 1024,
-    windowsHide: true
+    windowsHide: true,
+    shell: false
   });
   return {
     status: result.status ?? (result.signal ? 1 : 0),
@@ -103,8 +328,8 @@ async function pollUntilDead(pids, deadlineMs, pollMs) {
  * SIGKILL whatever survives `graceMs`, and only resolve once the tree is
  * confirmed dead (or the confirm window expires). Callers are short-lived
  * CLI processes, so the escalation must complete before they exit — never
- * schedule it on an unref'd timer. POSIX-only (pgrep); Windows support is
- * deferred with the rest of the plugin.
+ * schedule it on an unref'd timer. POSIX-only (pgrep); Windows support for
+ * tree kill is still deferred (one-shot runs do not need it).
  *
  * Returns { pids, survivors }: every pid signalled and whatever still
  * refused to die (normally empty; unkillable pids are the OS's problem).

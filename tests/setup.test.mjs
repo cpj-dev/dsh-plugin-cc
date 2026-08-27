@@ -5,7 +5,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { makeTempDir } from "./helpers.mjs";
+import { makeTempDir, prependPath } from "./helpers.mjs";
 
 import {
   HARNESS_CLI_PACKAGE,
@@ -107,44 +107,53 @@ function pluginAddCount(dshHome) {
   return fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean).length;
 }
 
-function writeFakeNpm(binDir, templatePath) {
-  const npm = path.join(binDir, "npm");
+function writeFakeNpm(binDir) {
+  const npm = path.join(binDir, "npm.mjs");
   fs.writeFileSync(
     npm,
-    `#!/bin/sh
-prefix=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --version) echo "10.9.7-fake"; exit 0 ;;
-    --prefix) prefix="$2"; shift 2; continue ;;
-    --no-fund|--no-audit|install) shift; continue ;;
-    *) shift; continue ;;
-  esac
-done
-if [ -z "$prefix" ]; then echo "missing --prefix" >&2; exit 1; fi
-mkdir -p "$prefix/node_modules/@deepseek-ai/dsh/lib"
-cp "$FAKE_DSH_BIN_TEMPLATE" "$prefix/node_modules/@deepseek-ai/dsh/lib/bin.js"
-chmod +x "$prefix/node_modules/@deepseek-ai/dsh/lib/bin.js"
-printf '%s\\n' '{"name":"@deepseek-ai/dsh","version":"${HARNESS_NPM_VERSION}"}' > "$prefix/node_modules/@deepseek-ai/dsh/package.json"
-echo "fake npm install" >&2
-exit 0
-`.replace("${HARNESS_NPM_VERSION}", HARNESS_NPM_VERSION),
-    { mode: 0o755 }
+    `#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+const argv = process.argv.slice(2);
+if (argv.includes("--version")) {
+  console.log("10.9.7-fake");
+  process.exit(0);
+}
+let prefix = "";
+for (let i = 0; i < argv.length; i += 1) {
+  if (argv[i] === "--prefix") {
+    prefix = argv[i + 1] ?? "";
+    i += 1;
+  }
+}
+if (!prefix) {
+  process.stderr.write("missing --prefix\\n");
+  process.exit(1);
+}
+const destDir = path.join(prefix, "node_modules", "@deepseek-ai", "dsh", "lib");
+fs.mkdirSync(destDir, { recursive: true });
+fs.copyFileSync(process.env.FAKE_DSH_BIN_TEMPLATE, path.join(destDir, "bin.js"));
+fs.writeFileSync(
+  path.join(prefix, "node_modules", "@deepseek-ai", "dsh", "package.json"),
+  JSON.stringify({ name: "@deepseek-ai/dsh", version: ${JSON.stringify(HARNESS_NPM_VERSION)} })
+);
+process.stderr.write("fake npm install\\n");
+process.exit(0);
+`
   );
-  return { npm, templatePath };
+  return npm;
 }
 
 function writeFakePnpm(binDir) {
-  const pnpm = path.join(binDir, "pnpm");
+  const pnpm = path.join(binDir, "pnpm.mjs");
   fs.writeFileSync(
     pnpm,
-    `#!/bin/sh
-case "$1" in
-  --version) echo "11.7.0-fake" ;;
-esac
-exit 0
-`,
-    { mode: 0o755 }
+    `#!/usr/bin/env node
+if (process.argv.includes("--version")) {
+  console.log("11.7.0-fake");
+}
+process.exit(0);
+`
   );
   return pnpm;
 }
@@ -155,26 +164,39 @@ function makeSetupEnv() {
   const fakeBinDir = makeTempDir("fakebin-");
   const templatePath = path.join(fakeBinDir, "fake-dsh-bin.mjs");
   fs.writeFileSync(templatePath, FAKE_BIN_SOURCE);
-  writeFakeNpm(fakeBinDir, templatePath);
+  writeFakeNpm(fakeBinDir);
   writeFakePnpm(fakeBinDir);
-  const env = {
+  const env = prependPath(fakeBinDir, {
     ...process.env,
     CLAUDE_PLUGIN_DATA: dataDir,
     DSH_HOME: dshHome,
     DEEPSEEK_API_KEY: "test-key",
     DSH_BINARY: "",
-    FAKE_DSH_BIN_TEMPLATE: templatePath,
-    PATH: `${fakeBinDir}:${process.env.PATH}`
-  };
+    FAKE_DSH_BIN_TEMPLATE: templatePath
+  });
   return { dataDir, dshHome, fakeBinDir, templatePath, env };
 }
 
 /** A dsh the plugin did not install, for DSH_BINARY / PATH scenarios. */
 function writeExternalDsh(dir = makeTempDir("external-dsh-")) {
-  fs.writeFileSync(path.join(dir, "bin.js"), FAKE_BIN_SOURCE);
-  const dsh = path.join(dir, "dsh");
-  fs.writeFileSync(dsh, `#!/bin/sh\nexec "${process.execPath}" "${dir}/bin.js" "$@"\n`, { mode: 0o755 });
-  return dsh;
+  const bin = path.join(dir, "bin.js");
+  fs.writeFileSync(bin, FAKE_BIN_SOURCE);
+  return bin;
+}
+
+function expectedNpmBinJs(dataDir) {
+  return path.join(dataDir, "npm", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+}
+
+function assertManagedNpmLaunch(config, dataDir) {
+  assert.equal(config.dshBinJs, expectedNpmBinJs(dataDir));
+  assert.ok(config.dshNode);
+  if (process.platform === "win32") {
+    assert.equal(config.dshBinary, undefined);
+  } else {
+    assert.ok(fs.existsSync(config.dshBinary));
+    assert.match(fs.readFileSync(config.dshBinary, "utf8"), /@deepseek-ai\/dsh\/lib\/bin\.js/);
+  }
 }
 
 function runBridge(args, env, cwd) {
@@ -220,8 +242,7 @@ test("setup with no args installs the pinned npm CLI and registry SDK specs", (t
   assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
   assert.equal(config.npmPrefix, path.join(dataDir, "npm"));
   assert.equal(config.harnessCheckout, undefined);
-  assert.ok(fs.existsSync(config.dshBinary));
-  assert.match(fs.readFileSync(config.dshBinary, "utf8"), /@deepseek-ai\/dsh\/lib\/bin\.js/);
+  assertManagedNpmLaunch(config, dataDir);
 
   const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
   assert.equal(addLog.length, 1);
@@ -262,8 +283,12 @@ test("setup --harness on a built checkout links dsh and installs the SDK server 
   assert.equal(config.dshInstall, "harness");
   assert.equal(config.harnessCheckout, checkout);
   assert.equal(config.sdkProfileVersion, harnessProfileIdentity(checkout));
-  assert.ok(fs.existsSync(config.dshBinary));
-  assert.match(fs.readFileSync(config.dshBinary, "utf8"), /apps\/cli\/lib\/bin\.js/);
+  assert.equal(config.dshBinJs, path.join(checkout, "apps", "cli", "lib", "bin.js"));
+  assert.ok(config.dshNode);
+  if (process.platform !== "win32") {
+    assert.ok(fs.existsSync(config.dshBinary));
+    assert.match(fs.readFileSync(config.dshBinary, "utf8"), /apps\/cli\/lib\/bin\.js/);
+  }
 
   const addLog = fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim().split("\n");
   assert.equal(addLog.length, 1);
@@ -445,7 +470,12 @@ test("check reports the configured npm pin and flags a vanished binary", (t) => 
   assert.equal(report.npm.ok, true);
 
   const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
-  fs.rmSync(config.dshBinary);
+  if (config.dshBinary && fs.existsSync(config.dshBinary) && config.dshBinary !== config.dshBinJs) {
+    fs.rmSync(config.dshBinary);
+  }
+  config.dshBinJs = `${config.dshBinJs ?? expectedNpmBinJs(dataDir)}.gone`;
+  config.dshNode = config.dshNode ?? process.execPath;
+  fs.writeFileSync(path.join(dataDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
   const degraded = runBridge(["check", "--json", "--cwd", workspace], env, workspace);
   const degradedReport = JSON.parse(degraded.stdout);
   assert.ok(degradedReport.nextSteps.some((step) => step.includes("no longer exists")));
@@ -572,7 +602,7 @@ test("plain setup migrates a pre-npm source config to the npm pin", (t) => {
   assert.equal(config.dshInstall, "npm");
   assert.equal(config.harnessCheckout, undefined);
   assert.equal(config.sdkProfileVersion, NPM_PROFILE_IDENTITY);
-  assert.match(fs.readFileSync(config.dshBinary, "utf8"), /@deepseek-ai\/dsh\/lib\/bin\.js/);
+  assertManagedNpmLaunch(config, dataDir);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dshHome, "plugin-add.log"), "utf8").trim()), [
     "plugin",
     "--profile",
@@ -682,9 +712,7 @@ test("setup reinstalls the npm pin when the prefix lost its CLI, even with dsh o
   // PATH: availability alone must not convince setup the pin is installed.
   fs.rmSync(path.join(dataDir, "npm"), { recursive: true, force: true });
   fs.rmSync(path.join(dataDir, "bin"), { recursive: true, force: true });
-  fs.writeFileSync(path.join(fakeBinDir, "dsh"), `#!/bin/sh\nexec "${process.execPath}" "${templatePath}" "$@"\n`, {
-    mode: 0o755
-  });
+  fs.writeFileSync(path.join(fakeBinDir, "dsh.mjs"), fs.readFileSync(templatePath));
 
   const stale = JSON.parse(runBridge(["check", "--json", "--cwd", workspace], env, workspace).stdout);
   assert.equal(stale.npm.ok, false);
@@ -780,12 +808,16 @@ test("setup rewrites a deleted wrapper without reinstalling the intact pin", (t)
   assert.equal(first.status, 0, first.stderr);
   const addsAfterFirst = pluginAddCount(dshHome);
 
-  // Only the wrapper is cleaned; the pinned package survives and an
+  // Only the launch config is cleaned; the pinned package survives and an
   // unrelated dsh answers on PATH, so nothing else looks broken.
   fs.rmSync(path.join(dataDir, "bin"), { recursive: true, force: true });
-  fs.writeFileSync(path.join(fakeBinDir, "dsh"), `#!/bin/sh\nexec "${process.execPath}" "${templatePath}" "$@"\n`, {
-    mode: 0o755
-  });
+  const configPath = path.join(dataDir, "config.json");
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.dshBinary = path.join(dataDir, "bin", "dsh");
+  delete config.dshNode;
+  delete config.dshBinJs;
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  fs.writeFileSync(path.join(fakeBinDir, "dsh.mjs"), fs.readFileSync(templatePath));
 
   const stale = JSON.parse(runBridge(["check", "--json", "--cwd", workspace], env, workspace).stdout);
   assert.equal(stale.npm.ok, false);
@@ -794,7 +826,7 @@ test("setup rewrites a deleted wrapper without reinstalling the intact pin", (t)
   const repair = runBridge(["setup", "--json", "--cwd", workspace], env, workspace);
   assert.equal(repair.status, 0, repair.stderr);
   const report = JSON.parse(repair.stdout);
-  assert.ok(report.actionsTaken.some((line) => line.startsWith("Rewrote the managed dsh wrapper")));
+  assert.ok(report.actionsTaken.some((line) => line.startsWith("Rewrote the managed dsh launch")));
   assert.ok(!report.actionsTaken.some((line) => line.includes(`Installed ${HARNESS_CLI_PACKAGE}@`)));
   assert.equal(pluginAddCount(dshHome), addsAfterFirst, "an intact profile must not be re-added");
   assert.equal(report.npm.ok, true);

@@ -47,6 +47,7 @@ import {
   normalizePermissionMode,
   normalizeReasoningEffort,
   resolveDshBinary,
+  resolveDshInvocation,
   resolveMode,
   writeModelOverlay,
   writeModeOverlay,
@@ -107,11 +108,13 @@ class RuntimeClient {
     // Mode ownership belongs to the plugin's --mode; the bundles read this
     // env to flip Code Mode process-wide, so it must not leak through.
     delete env.DSH_TOOLS_MODE;
-    this.child = spawn(this.binary, args, {
+    const invocation = resolveDshInvocation();
+    this.child = spawn(invocation.command, [...invocation.args, ...args], {
       cwd: this.cwd,
       env,
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      shell: false
     });
     this.generation = randomUUID();
     this.child.stdout.setEncoding("utf8");
